@@ -3101,7 +3101,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &336935658
 Transform:
   m_ObjectHideFlags: 0
@@ -7523,6 +7523,10 @@ PrefabInstance:
     - target: {fileID: 100000, guid: e9666cb54f0dea14aa443ce046e215db, type: 3}
       propertyPath: m_Name
       value: R2_Gargoyle_Lane2_Right
+      objectReference: {fileID: 0}
+    - target: {fileID: 100000, guid: e9666cb54f0dea14aa443ce046e215db, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 100000, guid: e9666cb54f0dea14aa443ce046e215db, type: 3}
       propertyPath: m_TagString
@@ -14061,8 +14065,8 @@ MonoBehaviour:
     currentState: 0
     stateTimer: 0
   - gargoyleBodyTransform: {fileID: 912388899}
-    muzzleTransform: {fileID: 68687446}
-    beamLineRenderer: {fileID: 68687447}
+    muzzleTransform: {fileID: 2076343384}
+    beamLineRenderer: {fileID: 2076343385}
     fireBeamVFX: {fileID: 1850077602}
     beamSensorCollider: {fileID: 0}
     cooldownDuration: 1
@@ -14162,10 +14166,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6fea09e2c4aee954fa282340ed6ae52a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  arenaMode: 2
+  arenaMode: 1
   room1MagmaGrid: {fileID: 1347434173}
-  room2GargoyleGauntlet: {fileID: 0}
-  room3CrossfireCover: {fileID: 0}
+  room2GargoyleGauntlet: {fileID: 1948627815}
+  room3CrossfireCover: {fileID: 336935657}
   hazardManager: {fileID: 0}
   arenaHUD: {fileID: 1707957227}
   maxEpisodeTimeSeconds: 35
@@ -16283,7 +16287,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1948627816
 Transform:
   m_ObjectHideFlags: 0
