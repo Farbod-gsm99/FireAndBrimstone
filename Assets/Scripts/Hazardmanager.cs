@@ -103,7 +103,7 @@ namespace FireAndBrimstone
 
         [Tooltip("Approximate fire travel speed in Unity units per second.")]
         [Min(0.1f)]
-        public float fireTravelSpeed = 12f;
+        public float fireTravelSpeed = 18f;
 
         [Header("References")]
         public CurriculumManager curriculumManager;
