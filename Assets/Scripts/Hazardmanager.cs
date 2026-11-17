@@ -381,38 +381,48 @@ namespace FireAndBrimstone
         // ---------------------------------------------------------------------
         // ROOM 3: RANGE-LIMITED TRACKING GARGOYLES (WITH OBSIDIAN PILLARS)
         // ---------------------------------------------------------------------
+
         private void UpdateRoom3TrackingGargoyles()
         {
             if (_trackedAgentTransform == null && arenaAgent != null)
                 _trackedAgentTransform = arenaAgent.transform;
-            if (_trackedAgentTransform == null) return;
 
-            Vector3 agentCenter = _trackedAgentTransform.position + Vector3.up * 0.4f;
+            if (_trackedAgentTransform == null)
+                return;
+
+            // Position of the agent's approximate center.
+            Vector3 agentCenter =
+                _trackedAgentTransform.position + Vector3.up * 0.4f;
 
             foreach (var g in room3TrackingGargoyles)
             {
-                if (g.muzzleTransform == null) continue;
+                if (g.muzzleTransform == null)
+                    continue;
 
+                // Position of this gargoyle's muzzle.
                 Vector3 origin = g.muzzleTransform.position;
+
                 float distToAgent = Vector3.Distance(origin, agentCenter);
-                bool agentInRange = (distToAgent <= room3ShootingRange);
+                bool agentInRange = distToAgent <= room3ShootingRange;
 
                 switch (g.currentState)
                 {
                     case GargoyleState.IdleOrCooldown:
+                    {
                         DisableGargoyleBeamVisuals(g);
                         g.stateTimer += Time.deltaTime;
 
-                        // Stay completely idle until cooldown is done AND the Agent steps within room3ShootingRange
                         if (g.stateTimer >= g.cooldownDuration && agentInRange)
                         {
                             g.stateTimer = 0f;
                             g.currentState = GargoyleState.Warning;
                         }
+
                         break;
+                    }
 
                     case GargoyleState.Warning:
-                        // If agent retreats outside range during the warning, cancel back to idle cleanly
+                    {
                         if (!agentInRange)
                         {
                             g.currentState = GargoyleState.IdleOrCooldown;
@@ -422,26 +432,50 @@ namespace FireAndBrimstone
                         }
 
                         g.stateTimer += Time.deltaTime;
+
                         RotateGargoyleLockedToAgent(g, origin, agentCenter);
 
                         Vector3 warnDir = (agentCenter - origin).normalized;
-                        CastAndRenderBeam(g, origin, warnDir, room3ShootingRange, isShootingFire: false);
+
+                        CastAndRenderBeam(
+                            g,
+                            origin,
+                            warnDir,
+                            room3ShootingRange,
+                            isShootingFire: false
+                        );
 
                         if (g.stateTimer >= g.warningDuration)
                         {
                             g.stateTimer = 0f;
                             g.currentState = GargoyleState.Shooting;
                         }
+
                         break;
+                    }
 
                     case GargoyleState.Shooting:
+                    {
                         g.stateTimer += Time.deltaTime;
 
-                        // Beam moves continuously with the agent (100% locked onto agent center while shooting!)
                         RotateGargoyleLockedToAgent(g, origin, agentCenter);
 
                         Vector3 fireDir = (agentCenter - origin).normalized;
-                        CastAndRenderBeam(g, origin, fireDir, room3ShootingRange, isShootingFire: true);
+
+                        // Preserve the fire's progress throughout this shooting cycle.
+                        if (CastAndRenderBeam(
+                            g,
+                            origin,
+                            fireDir,
+                            room3ShootingRange,
+                            isShootingFire: true,
+                            elapsedShootingTime: Mathf.Max(
+                                0f,
+                                g.stateTimer - Time.deltaTime
+                            )))
+                        {
+                            return;
+                        }
 
                         if (g.stateTimer >= g.shootingDuration)
                         {
@@ -450,19 +484,12 @@ namespace FireAndBrimstone
                             DisableGargoyleBeamVisuals(g);
                         }
 
-                        if (CastAndRenderBeam(
-                            g,
-                            origin,
-                            fireDir,
-                            room3ShootingRange,
-                            isShootingFire: true))
-                        {
-                            return;
-                        }
                         break;
+                    }
                 }
             }
         }
+
 
         private void RotateGargoyleLockedToAgent(GargoyleTurretSlot g, Vector3 muzzleOrigin, Vector3 agentCenter)
         {

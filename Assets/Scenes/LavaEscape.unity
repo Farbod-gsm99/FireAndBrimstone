@@ -13003,6 +13003,7 @@ GameObject:
   - component: {fileID: 1611265397}
   - component: {fileID: 1611265396}
   - component: {fileID: 1611265402}
+  - component: {fileID: 1611265403}
   m_Layer: 0
   m_Name: CubeAgent
   m_TagString: Player
@@ -13211,6 +13212,22 @@ MonoBehaviour:
   rayMissColor: {r: 1, g: 1, b: 1, a: 1}
   m_StartVerticalOffset: 0
   m_EndVerticalOffset: -1.5
+--- !u!114 &1611265403
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1611265394}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88b6042bc9a5d4aa58d931eae49442e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  agentParameters:
+    maxStep: 0
+  hasUpgradedFromAgentParameters: 1
+  MaxStep: 0
 --- !u!1001 &1617241767
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -14100,7 +14117,7 @@ MonoBehaviour:
     initialCycleOffset: 0
     currentState: 0
     stateTimer: 0
-  room3ShootingRange: 11
+  room3ShootingRange: 9.5
   beamObstructionMask:
     serializedVersion: 2
     m_Bits: 4294967295
