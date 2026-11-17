@@ -60,6 +60,16 @@ namespace FireAndBrimstone
 
             [System.NonSerialized]
             public float pendingFireHitTimer;
+
+            // Information about the fire stream currently travelling.
+            [System.NonSerialized]
+            public Vector3 pendingFireOrigin;
+
+            [System.NonSerialized]
+            public Vector3 pendingFireDirection;
+
+            [System.NonSerialized]
+            public float pendingFireMaxDistance;
         }
 
         [Header("Shared Materials (Room 1 Grid)")]
@@ -160,6 +170,9 @@ namespace FireAndBrimstone
 
                 g.hasPendingFireHit = false;
                 g.pendingFireHitTimer = 0f;
+                g.pendingFireOrigin = Vector3.zero;
+                g.pendingFireDirection = Vector3.zero;
+                g.pendingFireMaxDistance = 0f;
             }
         }
 
@@ -175,6 +188,12 @@ namespace FireAndBrimstone
                 // Start ready to trigger as soon as the agent steps into range
                 g.stateTimer = g.cooldownDuration;
                 DisableGargoyleBeamVisuals(g);
+
+                g.hasPendingFireHit = false;
+                g.pendingFireHitTimer = 0f;
+                g.pendingFireOrigin = Vector3.zero;
+                g.pendingFireDirection = Vector3.zero;
+                g.pendingFireMaxDistance = 0f;
             }
         }
 
@@ -476,7 +495,15 @@ namespace FireAndBrimstone
 
                         float travelTime = hit.distance / safeFireSpeed;
 
+                        // Store the original trajectory.
+                        g.pendingFireOrigin = origin;
+                        g.pendingFireDirection = direction.normalized;
+
+                        // The fire can only travel as far as its original impact point.
+                        g.pendingFireMaxDistance = hit.distance;
+
                         g.pendingFireHitTimer = Mathf.Max(0.05f, travelTime);
+
                         g.hasPendingFireHit = true;
                     }
                 }
@@ -613,17 +640,79 @@ namespace FireAndBrimstone
                 if (!g.hasPendingFireHit)
                     continue;
 
+                // Fire is still travelling.
                 g.pendingFireHitTimer -= Time.deltaTime;
 
-                if (g.pendingFireHitTimer <= 0f)
+                if (g.pendingFireHitTimer > 0f)
+                    continue;
+
+                // Fire has reached its expected impact time.
+                // Check whether the agent is STILL in its original path.
+                bool agentStillInDanger = FireStillHitsAgent(g);
+
+                // Clear the pending hit regardless of the result.
+                g.hasPendingFireHit = false;
+                g.pendingFireHitTimer = 0f;
+                g.pendingFireOrigin = Vector3.zero;
+                g.pendingFireDirection = Vector3.zero;
+                g.pendingFireMaxDistance = 0f;
+
+                // Only kill the agent if the fire actually reaches it.
+                if (agentStillInDanger)
                 {
-                    g.hasPendingFireHit = false;
-                    g.pendingFireHitTimer = 0f;
-
                     arenaAgent.KillAgentWithFire();
-
                     return true;
                 }
+            }
+
+            return false;
+        }
+
+        private bool IsAgentCollider(Collider col)
+        {
+            return arenaAgent != null &&
+                col != null &&
+                (col.transform == arenaAgent.transform ||
+                    col.transform.IsChildOf(arenaAgent.transform));
+        }
+
+        private bool FireStillHitsAgent(GargoyleTurretSlot g)
+        {
+            if (arenaAgent == null ||
+                g.pendingFireMaxDistance <= 0f ||
+                g.pendingFireDirection.sqrMagnitude < 0.001f)
+            {
+                return false;
+            }
+
+            // Find every collider along the original fire trajectory.
+            RaycastHit[] hits = Physics.RaycastAll(
+                g.pendingFireOrigin,
+                g.pendingFireDirection,
+                g.pendingFireMaxDistance,
+                beamObstructionMask,
+                QueryTriggerInteraction.Ignore
+            );
+
+            // RaycastAll does not guarantee that hits are sorted.
+            System.Array.Sort(
+                hits,
+                (a, b) => a.distance.CompareTo(b.distance)
+            );
+
+            foreach (RaycastHit hit in hits)
+            {
+                // Ignore the gargoyle itself, which might have rotated
+                // since the fire was launched (particularly in Room 3).
+                if (g.gargoyleBodyTransform != null &&
+                    (hit.collider.transform == g.gargoyleBodyTransform ||
+                    hit.collider.transform.IsChildOf(g.gargoyleBodyTransform)))
+                {
+                    continue;
+                }
+
+                // Only the FIRST actual object along the trajectory matters.
+                return IsAgentCollider(hit.collider);
             }
 
             return false;
