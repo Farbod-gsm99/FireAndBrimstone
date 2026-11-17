@@ -220,27 +220,28 @@ namespace FireAndBrimstone
 
         private void Update()
         {
-            // Process fire that is already travelling toward the Agent.
-            if (ProcessPendingFireHits(room2FixedGargoyles))
-                return;
-
-            if (ProcessPendingFireHits(room3TrackingGargoyles))
-                return;
-
             if (curriculumManager == null)
                 return;
 
-            if (curriculumManager.CurrentRoomIndex == 0)
+            switch (curriculumManager.CurrentRoomIndex)
             {
-                UpdateRoom1MagmaGrid();
-            }
-            else if (curriculumManager.CurrentRoomIndex == 1)
-            {
-                UpdateRoom2FixedGargoyles();
-            }
-            else if (curriculumManager.CurrentRoomIndex == 2)
-            {
-                UpdateRoom3TrackingGargoyles();
+                case 0:
+                    UpdateRoom1MagmaGrid();
+                    break;
+
+                case 1:
+                    if (ProcessPendingFireHits(room2FixedGargoyles))
+                        return;
+
+                    UpdateRoom2FixedGargoyles();
+                    break;
+
+                case 2:
+                    if (ProcessPendingFireHits(room3TrackingGargoyles))
+                        return;
+
+                    UpdateRoom3TrackingGargoyles();
+                    break;
             }
         }
 
@@ -354,13 +355,18 @@ namespace FireAndBrimstone
                         break;
 
                     case GargoyleState.Shooting:
-                        CastAndRenderBeam(
+
+                        if (CastAndRenderBeam(
                             g,
                             g.muzzleTransform.position,
                             -g.muzzleTransform.forward,
                             room2FullRoomBeamLength,
-                            isShootingFire: true
-                        );
+                            isShootingFire: true,
+                            elapsedShootingTime: Mathf.Max(0f, g.stateTimer - Time.deltaTime)))
+                        {
+                            return;
+                        }
+
                         if (g.stateTimer >= g.shootingDuration)
                         {
                             g.stateTimer = 0f;
@@ -443,6 +449,16 @@ namespace FireAndBrimstone
                             g.currentState = GargoyleState.IdleOrCooldown;
                             DisableGargoyleBeamVisuals(g);
                         }
+
+                        if (CastAndRenderBeam(
+                            g,
+                            origin,
+                            fireDir,
+                            room3ShootingRange,
+                            isShootingFire: true))
+                        {
+                            return;
+                        }
                         break;
                 }
             }
@@ -468,44 +484,92 @@ namespace FireAndBrimstone
         /// updates the LineRenderer + ParticleSystem, and scales the dynamic BoxCollider along the beam so the
         /// Agent's RayPerceptionSensorComponent3D can see the warning and fire lines!
         /// </summary>
-        private void CastAndRenderBeam(
+        private bool CastAndRenderBeam(
             GargoyleTurretSlot g,
             Vector3 origin,
             Vector3 direction,
             float maxRange,
-            bool isShootingFire)
+            bool isShootingFire,
+            float elapsedShootingTime = -1f)
         {
+            bool killImmediately = false;
+
             float actualLength = maxRange;
             Vector3 endPoint = origin + direction * maxRange;
 
-            if (Physics.Raycast(origin, direction, out RaycastHit hit, maxRange, beamObstructionMask, QueryTriggerInteraction.Ignore))
+            RaycastHit hit = default;
+            bool hasHit = false;
+            RaycastHit[] hits = Physics.RaycastAll(
+                origin,
+                direction,
+                maxRange,
+                beamObstructionMask,
+                QueryTriggerInteraction.Ignore
+            );
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+            foreach (RaycastHit candidate in hits)
             {
+                // Ignore colliders belonging to this gargoyle.
+                if ((g.gargoyleBodyTransform != null &&
+                    (candidate.collider.transform == g.gargoyleBodyTransform ||
+                     candidate.collider.transform.IsChildOf(g.gargoyleBodyTransform))) ||
+                    (g.muzzleTransform != null &&
+                    (candidate.collider.transform == g.muzzleTransform ||
+                     candidate.collider.transform.IsChildOf(g.muzzleTransform))))
+                {
+                    continue;
+                }
+
+                hit = candidate;
+                hasHit = true;
                 actualLength = hit.distance;
                 endPoint = hit.point;
+                break;
+            }
 
-                // If actively shooting fire and the ray hits the Agent (not blocked by a Cover pillar), kill the Agent!
-                if (isShootingFire && arenaAgent != null &&
-                    (hit.collider.gameObject == arenaAgent.gameObject ||
-                    hit.collider.transform.IsChildOf(arenaAgent.transform)))
+            if (hasHit && isShootingFire && IsAgentCollider(hit.collider))
+            {
+                float safeFireSpeed = Mathf.Max(0.1f, fireTravelSpeed);
+
+                if (elapsedShootingTime >= 0f)
                 {
-                    // Schedule damage only once per gargoyle.
-                    if (!g.hasPendingFireHit)
+                    // Calculate how much time is left before the fire reaches
+                    // this position.
+                    float totalTravelTime = hit.distance / safeFireSpeed;
+
+                    float remainingTravelTime =
+                        totalTravelTime - elapsedShootingTime;
+
+                    // Update the trajectory to reflect the current hit.
+                    g.pendingFireOrigin = origin;
+                    g.pendingFireDirection = direction.normalized;
+                    g.pendingFireMaxDistance = hit.distance;
+
+                    if (remainingTravelTime <= 0f)
                     {
-                        float safeFireSpeed = Mathf.Max(0.1f, fireTravelSpeed);
-
-                        float travelTime = hit.distance / safeFireSpeed;
-
-                        // Store the original trajectory.
-                        g.pendingFireOrigin = origin;
-                        g.pendingFireDirection = direction.normalized;
-
-                        // The fire can only travel as far as its original impact point.
-                        g.pendingFireMaxDistance = hit.distance;
-
-                        g.pendingFireHitTimer = Mathf.Max(0.05f, travelTime);
-
+                        // The fire has already reached this position.
+                        ClearPendingFireHit(g);
+                        killImmediately = true;
+                    }
+                    else
+                    {
+                        // Schedule only the remaining travel time.
+                        g.pendingFireHitTimer = remainingTravelTime;
                         g.hasPendingFireHit = true;
                     }
+                }
+                else if (!g.hasPendingFireHit)
+                {
+                    // Room 3 retains its existing full-travel-time behavior.
+                    float travelTime = hit.distance / safeFireSpeed;
+
+                    g.pendingFireOrigin = origin;
+                    g.pendingFireDirection = direction.normalized;
+                    g.pendingFireMaxDistance = hit.distance;
+
+                    g.pendingFireHitTimer = Mathf.Max(0.05f, travelTime);
+                    g.hasPendingFireHit = true;
                 }
             }
 
@@ -574,6 +638,14 @@ namespace FireAndBrimstone
                     Mathf.Max(0.2f, actualLength)
                 );
             }
+
+            if (killImmediately)
+            {
+                arenaAgent.KillAgentWithFire();
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -716,6 +788,15 @@ namespace FireAndBrimstone
             }
 
             return false;
+        }
+
+        private void ClearPendingFireHit(GargoyleTurretSlot g)
+        {
+            g.hasPendingFireHit = false;
+            g.pendingFireHitTimer = 0f;
+            g.pendingFireOrigin = Vector3.zero;
+            g.pendingFireDirection = Vector3.zero;
+            g.pendingFireMaxDistance = 0f;
         }
     }
 }
