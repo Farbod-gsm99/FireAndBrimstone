@@ -97,9 +97,25 @@ namespace FireAndBrimstone
 
 
         [Header("Spawn Position")]
-        // SpawnPoint is the desired agent root/pivot position, not the floor surface.
-        // The prefab places it at Y = 0.55, which leaves the centered 1m collider
-        // with 0.05m of clearance above the arena floor at Y = 0.
+        [Tooltip("Small gap between the bottom of the agent collider and the floor.")]
+        [SerializeField, Min(0f)]
+        private float spawnClearance = 0.02f;
+
+        [Tooltip("Height above the Spawn Point from which the ground check starts.")]
+        [SerializeField, Min(0.5f)]
+        private float spawnGroundRayStartHeight = 2.0f;
+
+        [Tooltip("Maximum downward distance searched for the floor.")]
+        [SerializeField, Min(1f)]
+        private float spawnGroundRayDistance = 10.0f;
+
+        [Tooltip("Layers that can be treated as the spawn floor.")]
+        [SerializeField]
+        private LayerMask spawnGroundMask = ~0;
+
+        private float _rootToColliderBottomOffset;
+        private float _initialRootWorldY;
+        private readonly RaycastHit[] _spawnGroundHits = new RaycastHit[32];
 
         private Rigidbody _rb;
         private int _currentRoomIndex;
@@ -145,7 +161,10 @@ namespace FireAndBrimstone
                     _agentColliders[i].enabled;
             }
 
-            // SpawnPoint is the agent root/pivot position (see OnEpisodeBegin).
+            // Save the authored root height as a safe fallback and measure how far
+            // the physical collider extends below the root pivot.
+            _initialRootWorldY = transform.position.y;
+            CacheRootToColliderBottomOffset();
 
             // Verify that the effect shader is assigned.
             foreach (Renderer r in _visualRenderers)
@@ -162,6 +181,101 @@ namespace FireAndBrimstone
                     }
                 }
             }
+        }
+
+        private void CacheRootToColliderBottomOffset()
+        {
+            bool foundPhysicalCollider = false;
+            Bounds combinedBounds = default;
+
+            foreach (Collider col in _agentColliders)
+            {
+                if (col == null || !col.enabled || col.isTrigger)
+                    continue;
+
+                if (!foundPhysicalCollider)
+                {
+                    combinedBounds = col.bounds;
+                    foundPhysicalCollider = true;
+                }
+                else
+                {
+                    combinedBounds.Encapsulate(col.bounds);
+                }
+            }
+
+            if (foundPhysicalCollider)
+            {
+                _rootToColliderBottomOffset =
+                    transform.position.y - combinedBounds.min.y;
+            }
+            else
+            {
+                _rootToColliderBottomOffset = 0f;
+
+                Debug.LogWarning(
+                    "CubeAgent: No enabled non-trigger collider was found. " +
+                    "Spawn height will be based on the root pivot.",
+                    this
+                );
+            }
+        }
+
+        private bool TryGetSpawnGroundHeight(
+            Vector3 spawnPosition,
+            out float groundY)
+        {
+            // Start above both the Spawn Point and the root's authored height.
+            float referenceY = Mathf.Max(
+                spawnPosition.y,
+                _initialRootWorldY
+            );
+
+            Vector3 rayOrigin = new Vector3(
+                spawnPosition.x,
+                referenceY + spawnGroundRayStartHeight,
+                spawnPosition.z
+            );
+
+            int hitCount = Physics.RaycastNonAlloc(
+                rayOrigin,
+                Vector3.down,
+                _spawnGroundHits,
+                spawnGroundRayDistance,
+                spawnGroundMask,
+                QueryTriggerInteraction.Ignore
+            );
+
+            float closestDistance = float.PositiveInfinity;
+            bool foundGround = false;
+            groundY = 0f;
+
+            for (int i = 0; i < hitCount; i++)
+            {
+                RaycastHit hit = _spawnGroundHits[i];
+
+                if (hit.collider == null)
+                    continue;
+
+                Transform hitTransform = hit.collider.transform;
+
+                // Never use one of the agent's own colliders as the floor.
+                if (hitTransform == transform || hitTransform.IsChildOf(transform))
+                    continue;
+
+                // Ignore walls and undersides; we need an upward-facing floor.
+                if (hit.normal.y < 0.5f)
+                    continue;
+
+                if (hit.distance < closestDistance)
+                {
+                    closestDistance = hit.distance;
+                    groundY = hit.point.y;
+                    foundGround = true;
+                }
+            }
+
+            return foundGround;
         }
 
         public override void OnEpisodeBegin()
@@ -189,7 +303,9 @@ namespace FireAndBrimstone
             SetCinematicPhysics(true);
             SetAgentCollidersEnabled(false);
 
-            // Calculate spawn position in WORLD coordinates.
+            // Use the Spawn Point for horizontal placement only. Its Y coordinate
+            // may represent either the floor or the agent pivot in the authored
+            // scene, so derive the root height from the actual floor collider.
             float randomX = Random.Range(
                 -spawnJitterX,
                 spawnJitterX
@@ -199,26 +315,40 @@ namespace FireAndBrimstone
 
             if (spawnPointTransform != null)
             {
-                // SpawnPoint is already authored at the desired root/pivot height.
-                // Do not add the collider half-height again: that would move the
-                // agent roughly 0.5m above the intended spawn position.
                 spawnPosition = spawnPointTransform.position;
-
-                // Apply randomized horizontal offset only.
                 spawnPosition += spawnPointTransform.right * randomX;
             }
             else
             {
-                // Fallback position.
+                // Fallback horizontal location. The floor query below determines Y.
                 Vector3 fallbackLocal = new Vector3(
                     randomX,
-                    0.55f,
+                    0f,
                     -13.0f
                 );
 
                 spawnPosition = transform.parent != null
                     ? transform.parent.TransformPoint(fallbackLocal)
                     : fallbackLocal;
+            }
+
+            if (TryGetSpawnGroundHeight(spawnPosition, out float groundY))
+            {
+                spawnPosition.y =
+                    groundY + _rootToColliderBottomOffset + spawnClearance;
+            }
+            else
+            {
+                // Keep the prefab-authored height if the floor cannot be detected.
+                spawnPosition.y = _initialRootWorldY;
+
+                Debug.LogWarning(
+                    $"CubeAgent: No walkable floor found beneath spawn point " +
+                    $"at XZ ({spawnPosition.x:F2}, {spawnPosition.z:F2}). " +
+                    $"Using the authored root Y ({_initialRootWorldY:F2}). " +
+                    "Check Spawn Ground Mask and Spawn Point placement.",
+                    this
+                );
             }
 
             // Position and rotate the agent.
