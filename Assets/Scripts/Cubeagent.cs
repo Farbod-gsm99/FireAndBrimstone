@@ -2,6 +2,7 @@ using UnityEngine;
 using Unity.MLAgents;
 using Unity.MLAgents.Actuators;
 using Unity.MLAgents.Sensors;
+using System.Collections;
 
 namespace FireAndBrimstone
 {
@@ -34,6 +35,66 @@ namespace FireAndBrimstone
         [Tooltip("Applied ONLY in Room 3 so the agent doesn't hide behind the first pillar forever. Rooms 1 & 2 have 0 step penalty.")]
         public float room3StepPenalty = -0.0003f;
 
+
+        [Header("Death / Respawn Cinematic")]
+
+        [Tooltip("Enable for YouTube recording. Disable during RL training.")]
+        [SerializeField]
+        private bool enableDeathRespawnEffects = false;
+
+        [SerializeField]
+        private Transform visualModelRoot;
+
+        [Header("Animation Timing")]
+
+        [SerializeField]
+        private float burnDuration = 1.2f;
+
+        [SerializeField]
+        private float burntHoldDuration = 0.35f;
+
+        [SerializeField]
+        private float spawnDuration = 0.9f;
+
+        [Header("Audio")]
+
+        [SerializeField]
+        private AudioSource burnAudioSource;
+
+        [SerializeField]
+        private AudioSource respawnAudioSource;
+
+        [SerializeField]
+        private AudioClip respawnClip;
+
+
+        // Cached visual renderers and colliders.
+        private Renderer[] _visualRenderers;
+        private Collider[] _agentColliders;
+        private bool[] _originalColliderStates;
+
+        private bool _originalIsKinematic;
+
+        private bool _isDying;
+        private bool _isSpawning;
+
+        private Coroutine _deathRoutine;
+        private Coroutine _spawnRoutine;
+
+        private MaterialPropertyBlock _effectBlock;
+
+        private static readonly int BurnProgressId =
+            Shader.PropertyToID("_BurnProgress");
+
+        private static readonly int SpawnProgressId =
+            Shader.PropertyToID("_SpawnProgress");
+
+        private static readonly int EffectBaseYId =
+            Shader.PropertyToID("_EffectBaseY");
+
+        private static readonly int EffectHeightId =
+            Shader.PropertyToID("_EffectHeight");
+
         private Rigidbody _rb;
         private int _currentRoomIndex;
         private float _initialDistToExit;
@@ -42,30 +103,134 @@ namespace FireAndBrimstone
         public override void Initialize()
         {
             _rb = GetComponent<Rigidbody>();
-            _rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+
+            _rb.constraints =
+                RigidbodyConstraints.FreezeRotationX |
+                RigidbodyConstraints.FreezeRotationZ;
+
+            _originalIsKinematic = _rb.isKinematic;
+
+            // Find the visual model if it wasn't assigned in the Inspector.
+            if (visualModelRoot == null)
+                visualModelRoot = transform.Find("VisualModel");
+
+            if (visualModelRoot != null)
+            {
+                _visualRenderers =
+                    visualModelRoot.GetComponentsInChildren<Renderer>(true);
+            }
+            else
+            {
+                _visualRenderers = new Renderer[0];
+
+                Debug.LogError(
+                    "CubeAgent: VisualModel reference is missing!"
+                );
+            }
+
+            // Cache the agent's colliders and their initial enabled states.
+            _agentColliders = GetComponentsInChildren<Collider>(true);
+
+            _originalColliderStates = new bool[_agentColliders.Length];
+
+            for (int i = 0; i < _agentColliders.Length; i++)
+            {
+                _originalColliderStates[i] =
+                    _agentColliders[i].enabled;
+            }
+
+            // Verify that the effect shader is assigned.
+            foreach (Renderer r in _visualRenderers)
+            {
+                foreach (Material mat in r.sharedMaterials)
+                {
+                    if (mat == null ||
+                        !mat.HasProperty(BurnProgressId) ||
+                        !mat.HasProperty(SpawnProgressId))
+                    {
+                        Debug.LogWarning(
+                            $"Effect Shader Graph material is missing on {r.name}"
+                        );
+                    }
+                }
+            }
         }
 
         public override void OnEpisodeBegin()
         {
+            // Cancel any old sequence if the environment is externally reset.
+            if (_deathRoutine != null)
+            {
+                StopCoroutine(_deathRoutine);
+                _deathRoutine = null;
+            }
+
+            if (_spawnRoutine != null)
+            {
+                StopCoroutine(_spawnRoutine);
+                _spawnRoutine = null;
+            }
+
+            _isDying = false;
+
+            _isSpawning =
+                enableDeathRespawnEffects &&
+                _visualRenderers.Length > 0;
+
+            // Freeze physics while repositioning.
+            SetCinematicPhysics(true);
+            SetAgentCollidersEnabled(false);
+
+            // Reset velocity.
             _rb.linearVelocity = Vector3.zero;
             _rb.angularVelocity = Vector3.zero;
 
+            // Calculate the spawn position.
             Vector3 baseSpawn = spawnPointTransform != null
                 ? spawnPointTransform.localPosition
                 : new Vector3(0f, 0.6f, -13.0f);
 
             float randomX = Random.Range(-spawnJitterX, spawnJitterX);
-            transform.localPosition = new Vector3(baseSpawn.x + randomX, baseSpawn.y, baseSpawn.z);
+
+            transform.localPosition = new Vector3(
+                baseSpawn.x + randomX,
+                baseSpawn.y,
+                baseSpawn.z
+            );
+
             transform.localRotation = Quaternion.identity;
 
+            Physics.SyncTransforms();
+
+            // Reset the arena.
             _currentRoomIndex = curriculumManager != null
                 ? curriculumManager.ResetArenaForNewEpisode(this)
                 : 0;
 
             if (exitDoorTransform != null)
             {
-                _initialDistToExit = Vector3.Distance(transform.localPosition, exitDoorTransform.localPosition);
+                _initialDistToExit = Vector3.Distance(
+                    transform.localPosition,
+                    exitDoorTransform.localPosition
+                );
+
                 _bestDistToExit = _initialDistToExit;
+            }
+
+            if (_isSpawning)
+            {
+                // Initially reveal only the very bottom of the model.
+                ApplyAgentVisualEffect(0f, 0f);
+
+                _spawnRoutine = StartCoroutine(SpawnSequence());
+            }
+            else
+            {
+                // Normal immediate reset during training.
+                ApplyAgentVisualEffect(0f, 1f);
+
+                SetAgentCollidersEnabled(true);
+                SetCinematicPhysics(false);
             }
         }
 
@@ -135,6 +300,10 @@ namespace FireAndBrimstone
         /// </summary>
         public override void OnActionReceived(ActionBuffers actionBuffers)
         {
+            if (_isDying || _isSpawning)
+            {
+                return;
+            }
             int moveAction = actionBuffers.DiscreteActions[0];
             int strafeAction = actionBuffers.DiscreteActions[1];
             int rotateAction = actionBuffers.DiscreteActions[2];
@@ -162,19 +331,18 @@ namespace FireAndBrimstone
 
         private void EvaluateStepRewards()
         {
-            // Lava pit fall check
+            // Lava pit fall check.
             if (transform.localPosition.y < -0.5f)
             {
-                AddReward(-1.0f);
-                EndEpisode();
+                BeginFailureSequence(-1.0f);
                 return;
             }
 
-            // Episode timeout check
-            if (curriculumManager != null && curriculumManager.RemainingTime <= 0f)
+            // Episode timeout.
+            if (curriculumManager != null &&
+                curriculumManager.RemainingTime <= 0f)
             {
-                AddReward(-0.5f);
-                EndEpisode();
+                BeginFailureSequence(-0.5f);
                 return;
             }
 
@@ -201,12 +369,13 @@ namespace FireAndBrimstone
 
         public void KillAgentWithFire()
         {
-            AddReward(-1.0f);
-            EndEpisode();
+            BeginFailureSequence(-1.0f);
         }
 
         private void OnTriggerEnter(Collider other)
         {
+            if (_isDying || _isSpawning)
+                return;
             if (other.CompareTag("FireHitbox"))
             {
                 KillAgentWithFire();
@@ -220,6 +389,8 @@ namespace FireAndBrimstone
 
         private void OnCollisionEnter(Collision collision)
         {
+            if (_isDying || _isSpawning)
+                return;
             if (collision.collider.CompareTag("FireHitbox"))
             {
                 KillAgentWithFire();
@@ -246,6 +417,198 @@ namespace FireAndBrimstone
             if (Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.LeftArrow)) discreteActions[2] = 1;
             else if (Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.RightArrow)) discreteActions[2] = 2;
             else discreteActions[2] = 0;
+        }
+
+        private void BeginFailureSequence(float rewardPenalty)
+        {
+            // Prevent multiple collisions from starting multiple death animations.
+            if (_isDying || _isSpawning)
+                return;
+
+            AddReward(rewardPenalty);
+
+            // Preserve normal RL training behavior.
+            if (!enableDeathRespawnEffects || _visualRenderers.Length == 0)
+            {
+                EndEpisode();
+                return;
+            }
+
+            _isDying = true;
+
+            SetCinematicPhysics(true);
+            SetAgentCollidersEnabled(false);
+
+            // Start the burning sound.
+            if (burnAudioSource != null)
+            {
+                burnAudioSource.Stop();
+                burnAudioSource.Play();
+            }
+
+            _deathRoutine = StartCoroutine(DeathSequence());
+        }
+
+        private IEnumerator DeathSequence()
+        {
+            float elapsed = 0f;
+
+            while (elapsed < burnDuration)
+            {
+                elapsed += Time.deltaTime;
+
+                float progress = Mathf.Clamp01(
+                    elapsed / burnDuration
+                );
+
+                // Gradually turn grey from bottom to top.
+                ApplyAgentVisualEffect(progress, 1f);
+
+                yield return null;
+            }
+
+            // Make sure the entire character is burnt.
+            ApplyAgentVisualEffect(1f, 1f);
+
+            if (burnAudioSource != null)
+                burnAudioSource.Stop();
+
+            // Leave the burnt character visible briefly.
+            yield return new WaitForSeconds(burntHoldDuration);
+
+            _deathRoutine = null;
+
+            // Only now end the ML-Agents episode.
+            EndEpisode();
+        }
+
+        private IEnumerator SpawnSequence()
+        {
+            // Play the respawn sound.
+            if (respawnAudioSource != null && respawnClip != null)
+            {
+                respawnAudioSource.PlayOneShot(respawnClip);
+            }
+
+            float elapsed = 0f;
+
+            while (elapsed < spawnDuration)
+            {
+                elapsed += Time.deltaTime;
+
+                float progress = Mathf.Clamp01(
+                    elapsed / spawnDuration
+                );
+
+                // Reveal the agent from bottom to top.
+                ApplyAgentVisualEffect(0f, progress);
+
+                yield return null;
+            }
+
+            // Reveal the complete character.
+            ApplyAgentVisualEffect(0f, 1f);
+
+            _spawnRoutine = null;
+
+            // Allow movement and collisions again.
+            SetAgentCollidersEnabled(true);
+            SetCinematicPhysics(false);
+
+            _isSpawning = false;
+        }
+
+        private void ApplyAgentVisualEffect(
+    float burnProgress,
+    float spawnProgress)
+        {
+            if (_visualRenderers == null ||
+                _visualRenderers.Length == 0)
+                return;
+
+            // Calculate the total world-space height of the character.
+            Bounds combinedBounds = _visualRenderers[0].bounds;
+
+            foreach (Renderer r in _visualRenderers)
+            {
+                if (r != null)
+                    combinedBounds.Encapsulate(r.bounds);
+            }
+
+            float baseY = combinedBounds.min.y;
+            float height = Mathf.Max(combinedBounds.size.y, 0.001f);
+
+            foreach (Renderer r in _visualRenderers)
+            {
+                if (r == null)
+                    continue;
+
+                // Preserve any other existing property overrides.
+                r.GetPropertyBlock(_effectBlock);
+
+                _effectBlock.SetFloat(
+                    BurnProgressId,
+                    burnProgress
+                );
+
+                _effectBlock.SetFloat(
+                    SpawnProgressId,
+                    spawnProgress
+                );
+
+                _effectBlock.SetFloat(
+                    EffectBaseYId,
+                    baseY
+                );
+
+                _effectBlock.SetFloat(
+                    EffectHeightId,
+                    height
+                );
+
+                r.SetPropertyBlock(_effectBlock);
+            }
+        }
+
+        private void SetCinematicPhysics(bool freeze)
+        {
+            if (_rb == null)
+                return;
+
+            if (freeze)
+            {
+                _rb.linearVelocity = Vector3.zero;
+                _rb.angularVelocity = Vector3.zero;
+                _rb.isKinematic = true;
+            }
+            else
+            {
+                _rb.isKinematic = _originalIsKinematic;
+            }
+        }
+
+
+        private void SetAgentCollidersEnabled(bool enabled)
+        {
+            if (_agentColliders == null)
+                return;
+
+            for (int i = 0; i < _agentColliders.Length; i++)
+            {
+                if (_agentColliders[i] == null)
+                    continue;
+
+                _agentColliders[i].enabled =
+                    enabled && _originalColliderStates[i];
+            }
+
+            Physics.SyncTransforms();
+        }
+
+        protected override void Awake()
+        {
+            base.Awake();
+            _effectBlock = new MaterialPropertyBlock();
         }
     }
 }
