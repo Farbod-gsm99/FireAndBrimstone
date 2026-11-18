@@ -231,9 +231,15 @@ namespace FireAndBrimstone
                 _initialRootWorldY
             );
 
+            float rayStartHeight = Mathf.Max(0.5f, spawnGroundRayStartHeight);
+            float rayDistance = Mathf.Max(1f, spawnGroundRayDistance);
+            int raycastMask = spawnGroundMask.value == 0
+                ? Physics.DefaultRaycastLayers
+                : spawnGroundMask.value;
+
             Vector3 rayOrigin = new Vector3(
                 spawnPosition.x,
-                referenceY + spawnGroundRayStartHeight,
+                referenceY + rayStartHeight,
                 spawnPosition.z
             );
 
@@ -241,8 +247,8 @@ namespace FireAndBrimstone
                 rayOrigin,
                 Vector3.down,
                 _spawnGroundHits,
-                spawnGroundRayDistance,
-                spawnGroundMask,
+                rayDistance,
+                raycastMask,
                 QueryTriggerInteraction.Ignore
             );
 
@@ -342,7 +348,7 @@ namespace FireAndBrimstone
             if (TryGetSpawnGroundHeight(spawnPosition, out float groundY))
             {
                 spawnPosition.y =
-                    groundY + _rootToColliderBottomOffset + spawnClearance;
+                    groundY + _rootToColliderBottomOffset + Mathf.Max(0f, spawnClearance);
             }
             else
             {
