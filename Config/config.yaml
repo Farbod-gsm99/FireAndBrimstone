@@ -29,28 +29,6 @@ behaviors:
     summary_freq: 10000
     threaded: false
 
-environment_parameters:
-  room_lesson:
-    curriculum:
-      - name: Lesson0_MagmaGrid
-        completion_criteria:
-          measure: reward
-          behavior: CubeAgent
-          signal_smoothing: true
-          min_lesson_length: 200
-          threshold: 0.80
-        value: 0.0
-      - name: Lesson1_GargoyleGauntlet
-        completion_criteria:
-          measure: reward
-          behavior: CubeAgent
-          signal_smoothing: true
-          min_lesson_length: 250
-          threshold: 0.85
-        value: 1.0
-      - name: Lesson2_CrossfireCover
-        value: 2.0
-
 engine_settings:
   width: 1280
   height: 720
