@@ -1,5 +1,4 @@
 using UnityEngine;
-using Unity.MLAgents;
 
 namespace FireAndBrimstone
 {
@@ -20,7 +19,7 @@ namespace FireAndBrimstone
     public class CurriculumManager : MonoBehaviour
     {
         [Header("Mode Selection (Use ForceRoom for YouTube Recording)")]
-        [Tooltip("TrainingCurriculum reads lesson 0-2 from config.yaml. ForceRoom locks a specific stage.")]
+        [Tooltip("TrainingCurriculum advances after each successful room. ForceRoom locks a specific stage for testing or recording.")]
         public ArenaMode arenaMode = ArenaMode.TrainingCurriculum;
 
         [Header("Room Root GameObjects (Inside EnvironmentAnchor)")]
@@ -81,21 +80,32 @@ namespace FireAndBrimstone
 
         /// <summary>
         /// Called at the start of every episode by CubeAgent.OnEpisodeBegin().
-        /// Reads the curriculum lesson (0, 1, or 2) and activates the corresponding room layout.
+        /// In training mode, CurrentRoomIndex is retained between episodes and only
+        /// advances when the agent successfully reaches the current room's exit.
         /// </summary>
         public int ResetArenaForNewEpisode(CubeAgent agent)
         {
             AttemptCount++;
             RemainingTime = maxEpisodeTimeSeconds;
 
-            if (arenaMode == ArenaMode.TrainingCurriculum)
+            // Forced-room modes remain available for testing and recording.
+            // TrainingCurriculum deliberately does not read an external lesson
+            // parameter: progression is stored locally in this arena instance.
+            if (arenaMode != ArenaMode.TrainingCurriculum)
             {
-                float lessonValue = Academy.Instance.EnvironmentParameters.GetWithDefault("room_lesson", 0f);
-                CurrentRoomIndex = Mathf.Clamp(Mathf.RoundToInt(lessonValue), 0, 2);
+                CurrentRoomIndex = Mathf.Clamp(
+                    (int)arenaMode,
+                    0,
+                    _rooms.Length - 1
+                );
             }
             else
             {
-                CurrentRoomIndex = (int)arenaMode;
+                CurrentRoomIndex = Mathf.Clamp(
+                    CurrentRoomIndex,
+                    0,
+                    _rooms.Length - 1
+                );
             }
 
             for (int i = 0; i < _rooms.Length; i++)
@@ -132,6 +142,31 @@ namespace FireAndBrimstone
             }
 
             return CurrentRoomIndex;
+        }
+
+        /// <summary>
+        /// Advances this arena's training agent after a successful room exit.
+        /// A failed or timed-out episode never calls this method, so the agent
+        /// remains in the same room until it completes it.
+        /// After Room 3, the next episode starts a new three-room sequence at Room 1.
+        /// </summary>
+        public void AdvanceAfterSuccessfulRoom()
+        {
+            // Preserve the fixed-room behavior used for testing/recording.
+            if (arenaMode != ArenaMode.TrainingCurriculum)
+                return;
+
+            if (_rooms == null || _rooms.Length == 0)
+                return;
+
+            if (CurrentRoomIndex >= _rooms.Length - 1)
+            {
+                CurrentRoomIndex = 0;
+            }
+            else
+            {
+                CurrentRoomIndex++;
+            }
         }
     }
 }
