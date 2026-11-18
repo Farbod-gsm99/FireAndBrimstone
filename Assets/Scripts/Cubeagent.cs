@@ -77,6 +77,7 @@ namespace FireAndBrimstone
 
         private bool _isDying;
         private bool _isSpawning;
+        private bool _isCompletingRoom;
 
         private Coroutine _deathRoutine;
         private Coroutine _spawnRoutine;
@@ -300,6 +301,7 @@ namespace FireAndBrimstone
             }
 
             _isDying = false;
+            _isCompletingRoom = false;
 
             _isSpawning =
                 enableDeathRespawnEffects &&
@@ -471,7 +473,7 @@ namespace FireAndBrimstone
         /// </summary>
         public override void OnActionReceived(ActionBuffers actionBuffers)
         {
-            if (_isDying || _isSpawning)
+            if (_isDying || _isSpawning || _isCompletingRoom)
             {
                 return;
             }
@@ -545,7 +547,7 @@ namespace FireAndBrimstone
 
         private void OnTriggerEnter(Collider other)
         {
-            if (_isDying || _isSpawning)
+            if (_isDying || _isSpawning || _isCompletingRoom)
                 return;
             if (other.CompareTag("FireHitbox"))
             {
@@ -553,14 +555,13 @@ namespace FireAndBrimstone
             }
             else if (other.CompareTag("ExitDoor"))
             {
-                AddReward(1.0f);
-                EndEpisode();
+                CompleteCurrentRoom();
             }
         }
 
         private void OnCollisionEnter(Collision collision)
         {
-            if (_isDying || _isSpawning)
+            if (_isDying || _isSpawning || _isCompletingRoom)
                 return;
             if (collision.collider.CompareTag("FireHitbox"))
             {
@@ -568,9 +569,34 @@ namespace FireAndBrimstone
             }
             else if (collision.collider.CompareTag("ExitDoor"))
             {
-                AddReward(1.0f);
-                EndEpisode();
+                CompleteCurrentRoom();
             }
+        }
+
+        private void CompleteCurrentRoom()
+        {
+            // The Exit Door can be detected by both trigger and collision callbacks.
+            // Award success and advance the room only once for this episode.
+            if (_isCompletingRoom || _isDying || _isSpawning)
+                return;
+
+            _isCompletingRoom = true;
+            AddReward(1.0f);
+
+            if (curriculumManager != null)
+            {
+                curriculumManager.AdvanceAfterSuccessfulRoom();
+            }
+            else
+            {
+                Debug.LogWarning(
+                    "CubeAgent reached the Exit Door, but no CurriculumManager " +
+                    "is assigned. The episode will end without room progression.",
+                    this
+                );
+            }
+
+            EndEpisode();
         }
 
         public override void Heuristic(in ActionBuffers actionsOut)
@@ -593,7 +619,7 @@ namespace FireAndBrimstone
         private void BeginFailureSequence(float rewardPenalty)
         {
             // Prevent multiple collisions from starting multiple death animations.
-            if (_isDying || _isSpawning)
+            if (_isDying || _isSpawning || _isCompletingRoom)
                 return;
 
             AddReward(rewardPenalty);
