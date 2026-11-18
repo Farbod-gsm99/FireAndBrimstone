@@ -97,11 +97,9 @@ namespace FireAndBrimstone
 
 
         [Header("Spawn Position")]
-
-        [SerializeField]
-        private float spawnClearance = 0.02f;
-
-        private float _rootToColliderBottomOffset;
+        // SpawnPoint is the desired agent root/pivot position, not the floor surface.
+        // The prefab places it at Y = 0.55, which leaves the centered 1m collider
+        // with 0.05m of clearance above the arena floor at Y = 0.
 
         private Rigidbody _rb;
         private int _currentRoomIndex;
@@ -147,42 +145,7 @@ namespace FireAndBrimstone
                     _agentColliders[i].enabled;
             }
 
-            // Calculate the distance between the root pivot
-            // and the bottom of the agent's physical colliders.
-
-            bool foundPhysicalCollider = false;
-            Bounds combinedBounds = new Bounds();
-
-            foreach (Collider col in _agentColliders)
-            {
-                if (col == null || !col.enabled || col.isTrigger)
-                    continue;
-
-                if (!foundPhysicalCollider)
-                {
-                    combinedBounds = col.bounds;
-                    foundPhysicalCollider = true;
-                }
-                else
-                {
-                    combinedBounds.Encapsulate(col.bounds);
-                }
-            }
-
-            if (foundPhysicalCollider)
-            {
-                _rootToColliderBottomOffset =
-                    transform.position.y - combinedBounds.min.y;
-            }
-            else
-            {
-                Debug.LogWarning(
-                    "CubeAgent has no enabled physical collider. " +
-                    "Spawn height will not be automatically adjusted."
-                );
-
-                _rootToColliderBottomOffset = 0f;
-            }
+            // SpawnPoint is the agent root/pivot position (see OnEpisodeBegin).
 
             // Verify that the effect shader is assigned.
             foreach (Renderer r in _visualRenderers)
@@ -236,24 +199,20 @@ namespace FireAndBrimstone
 
             if (spawnPointTransform != null)
             {
-                // SpawnPoint represents the floor surface.
+                // SpawnPoint is already authored at the desired root/pivot height.
+                // Do not add the collider half-height again: that would move the
+                // agent roughly 0.5m above the intended spawn position.
                 spawnPosition = spawnPointTransform.position;
 
-                // Apply randomized horizontal offset.
+                // Apply randomized horizontal offset only.
                 spawnPosition += spawnPointTransform.right * randomX;
-
-                // Raise the root so the collider bottom sits
-                // just above the floor.
-                spawnPosition.y +=
-                    _rootToColliderBottomOffset + spawnClearance;
-
             }
             else
             {
                 // Fallback position retains the original pivot-height convention.
                 Vector3 fallbackLocal = new Vector3(
                     randomX,
-                    0.6f,
+                    0.55f,
                     -13.0f
                 );
 
