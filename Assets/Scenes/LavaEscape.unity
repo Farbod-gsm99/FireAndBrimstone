@@ -1417,6 +1417,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 1465802834681655825, guid: 1e20da3ae86de9540809f7a15e5dae1e, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.55
+      objectReference: {fileID: 0}
     - target: {fileID: 6500041660497099633, guid: 1e20da3ae86de9540809f7a15e5dae1e, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -1464,6 +1468,10 @@ PrefabInstance:
     - target: {fileID: 7732960631710510207, guid: 1e20da3ae86de9540809f7a15e5dae1e, type: 3}
       propertyPath: m_Name
       value: RoomEscape_Arena
+      objectReference: {fileID: 0}
+    - target: {fileID: 8926972408425758092, guid: 1e20da3ae86de9540809f7a15e5dae1e, type: 3}
+      propertyPath: arenaMode
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

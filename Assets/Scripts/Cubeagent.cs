@@ -236,21 +236,15 @@ namespace FireAndBrimstone
 
             if (spawnPointTransform != null)
             {
-                // SpawnPoint represents the floor surface.
+                // SpawnPoint already represents the agent's root position.
                 spawnPosition = spawnPointTransform.position;
 
                 // Apply randomized horizontal offset.
                 spawnPosition += spawnPointTransform.right * randomX;
-
-                // Raise the root so the collider bottom sits
-                // just above the floor.
-                spawnPosition.y +=
-                    _rootToColliderBottomOffset + spawnClearance;
-
             }
             else
             {
-                // Fallback position retains the original pivot-height convention.
+                // Fallback position.
                 Vector3 fallbackLocal = new Vector3(
                     randomX,
                     0.6f,
