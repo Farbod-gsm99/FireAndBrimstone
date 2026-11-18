@@ -1471,7 +1471,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8926972408425758092, guid: 1e20da3ae86de9540809f7a15e5dae1e, type: 3}
       propertyPath: arenaMode
-      value: 1
+      value: -1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
