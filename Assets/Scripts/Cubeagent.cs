@@ -95,6 +95,14 @@ namespace FireAndBrimstone
         private static readonly int EffectHeightId =
             Shader.PropertyToID("_EffectHeight");
 
+
+        [Header("Spawn Position")]
+
+        [SerializeField]
+        private float spawnClearance = 0.02f;
+
+        private float _rootToColliderBottomOffset;
+
         private Rigidbody _rb;
         private int _currentRoomIndex;
         private float _initialDistToExit;
@@ -139,6 +147,43 @@ namespace FireAndBrimstone
                     _agentColliders[i].enabled;
             }
 
+            // Calculate the distance between the root pivot
+            // and the bottom of the agent's physical colliders.
+
+            bool foundPhysicalCollider = false;
+            Bounds combinedBounds = new Bounds();
+
+            foreach (Collider col in _agentColliders)
+            {
+                if (col == null || !col.enabled || col.isTrigger)
+                    continue;
+
+                if (!foundPhysicalCollider)
+                {
+                    combinedBounds = col.bounds;
+                    foundPhysicalCollider = true;
+                }
+                else
+                {
+                    combinedBounds.Encapsulate(col.bounds);
+                }
+            }
+
+            if (foundPhysicalCollider)
+            {
+                _rootToColliderBottomOffset =
+                    transform.position.y - combinedBounds.min.y;
+            }
+            else
+            {
+                Debug.LogWarning(
+                    "CubeAgent has no enabled physical collider. " +
+                    "Spawn height will not be automatically adjusted."
+                );
+
+                _rootToColliderBottomOffset = 0f;
+            }
+
             // Verify that the effect shader is assigned.
             foreach (Renderer r in _visualRenderers)
             {
@@ -181,24 +226,53 @@ namespace FireAndBrimstone
             SetCinematicPhysics(true);
             SetAgentCollidersEnabled(false);
 
-            // Reset velocity.
-            _rb.linearVelocity = Vector3.zero;
-            _rb.angularVelocity = Vector3.zero;
-
-            // Calculate the spawn position.
-            Vector3 baseSpawn = spawnPointTransform != null
-                ? spawnPointTransform.localPosition
-                : new Vector3(0f, 0.6f, -13.0f);
-
-            float randomX = Random.Range(-spawnJitterX, spawnJitterX);
-
-            transform.localPosition = new Vector3(
-                baseSpawn.x + randomX,
-                baseSpawn.y,
-                baseSpawn.z
+            // Calculate spawn position in WORLD coordinates.
+            float randomX = Random.Range(
+                -spawnJitterX,
+                spawnJitterX
             );
 
-            transform.localRotation = Quaternion.identity;
+            Vector3 spawnPosition;
+
+            if (spawnPointTransform != null)
+            {
+                // SpawnPoint represents the floor surface.
+                spawnPosition = spawnPointTransform.position;
+
+                // Apply randomized horizontal offset.
+                spawnPosition += spawnPointTransform.right * randomX;
+
+                // Raise the root so the collider bottom sits
+                // just above the floor.
+                spawnPosition.y +=
+                    _rootToColliderBottomOffset + spawnClearance;
+
+            }
+            else
+            {
+                // Fallback position retains the original pivot-height convention.
+                Vector3 fallbackLocal = new Vector3(
+                    randomX,
+                    0.6f,
+                    -13.0f
+                );
+
+                spawnPosition = transform.parent != null
+                    ? transform.parent.TransformPoint(fallbackLocal)
+                    : fallbackLocal;
+            }
+
+            // Position and rotate the agent.
+            Quaternion spawnRotation = spawnPointTransform != null
+                ? spawnPointTransform.rotation
+                : (transform.parent != null
+                    ? transform.parent.rotation
+                    : Quaternion.identity);
+
+            transform.SetPositionAndRotation(
+                spawnPosition,
+                spawnRotation
+            );
 
             Physics.SyncTransforms();
 
@@ -577,13 +651,26 @@ namespace FireAndBrimstone
 
             if (freeze)
             {
-                _rb.linearVelocity = Vector3.zero;
-                _rb.angularVelocity = Vector3.zero;
-                _rb.isKinematic = true;
+                // Only reset velocity when transitioning from
+                // a dynamic Rigidbody to a kinematic one.
+                if (!_rb.isKinematic)
+                {
+                    _rb.linearVelocity = Vector3.zero;
+                    _rb.angularVelocity = Vector3.zero;
+
+                    _rb.isKinematic = true;
+                }
             }
             else
             {
                 _rb.isKinematic = _originalIsKinematic;
+
+                // Reset velocity only after physics is restored.
+                if (!_rb.isKinematic)
+                {
+                    _rb.linearVelocity = Vector3.zero;
+                    _rb.angularVelocity = Vector3.zero;
+                }
             }
         }
 
