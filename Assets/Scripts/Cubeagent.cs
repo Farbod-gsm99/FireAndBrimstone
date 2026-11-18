@@ -303,6 +303,13 @@ namespace FireAndBrimstone
             SetCinematicPhysics(true);
             SetAgentCollidersEnabled(false);
 
+            // Activate the selected room before querying for the floor. The floor
+            // collider may belong to the room that was inactive last episode.
+            _currentRoomIndex = curriculumManager != null
+                ? curriculumManager.ResetArenaForNewEpisode(this)
+                : 0;
+            Physics.SyncTransforms();
+
             // Use the Spawn Point for horizontal placement only. Its Y coordinate
             // may represent either the floor or the agent pivot in the authored
             // scene, so derive the root height from the actual floor collider.
@@ -364,11 +371,6 @@ namespace FireAndBrimstone
             );
 
             Physics.SyncTransforms();
-
-            // Reset the arena.
-            _currentRoomIndex = curriculumManager != null
-                ? curriculumManager.ResetArenaForNewEpisode(this)
-                : 0;
 
             if (exitDoorTransform != null)
             {
