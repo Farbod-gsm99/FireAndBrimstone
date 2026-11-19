@@ -1,0 +1,38 @@
+{
+    "CubeAgent": {
+        "checkpoints": [
+            {
+                "steps": 199909,
+                "file_path": "results\\FirstEscape\\CubeAgent\\CubeAgent-199909.onnx",
+                "reward": -0.45971396709016216,
+                "creation_time": 1795083927.6067195,
+                "auxillary_file_paths": [
+                    "results\\FirstEscape\\CubeAgent\\CubeAgent-199909.pt"
+                ]
+            },
+            {
+                "steps": 382562,
+                "file_path": "results\\FirstEscape\\CubeAgent\\CubeAgent-382562.onnx",
+                "reward": -0.4294527631951496,
+                "creation_time": 1795084645.4054108,
+                "auxillary_file_paths": [
+                    "results\\FirstEscape\\CubeAgent\\CubeAgent-382562.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 382562,
+            "file_path": "results\\FirstEscape\\CubeAgent.onnx",
+            "reward": -0.4294527631951496,
+            "creation_time": 1795084645.4054108,
+            "auxillary_file_paths": [
+                "results\\FirstEscape\\CubeAgent\\CubeAgent-382562.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.2.0.dev0",
+        "torch_version": "2.2.2+cu121"
+    }
+}
