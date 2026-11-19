@@ -417,8 +417,8 @@ namespace FireAndBrimstone
         /// 1-3: One-hot encoding of the current room (Room 1, Room 2, Room 3) -> 3 floats
         /// 4-5: Normalized local velocity (X, Z) -> 2 floats
         /// 6-7: Local direction vector toward the Exit Door (X, Z) -> 2 floats
-        /// 8-10: Nearest Gargoyle Threat telemetry (ThreatState [0=Idle/Safe, 0.5=Warning, 1=Shooting],
-        ///       or Room 1's nearest hazard row, safe-column offset, and wave phase -> 3 floats
+        /// 8-10: Room hazard telemetry (Room 1 grid offsets/phase; Rooms 2-3 gargoyle
+        ///       threat state, phase timer, and distance) -> 3 floats
         /// Total Vector Observation Space Size = 10.
         /// </summary>
         public override void CollectObservations(VectorSensor sensor)

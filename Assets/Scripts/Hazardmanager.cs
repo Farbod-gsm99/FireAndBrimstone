@@ -318,6 +318,8 @@ namespace FireAndBrimstone
         }
 
         // ---------------------------------------------------------------------
+        // ROOM 1: GRID TELEMETRY FOR THE AGENT
+        // ---------------------------------------------------------------------
         /// <summary>
         /// Gives the agent compact information about the Room 1 magma grid.
         /// The first value is the signed offset to the nearest active hazard row
@@ -399,6 +401,7 @@ namespace FireAndBrimstone
                 : 0.5f * phaseProgress;
         }
 
+        // ---------------------------------------------------------------------
         // ROOM 2: FIXED-DIRECTION GARGOYLE GAUNTLET (NO PILLARS, FULL WIDTH)
         // ---------------------------------------------------------------------
         private void UpdateRoom2FixedGargoyles()
