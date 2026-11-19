@@ -318,6 +318,87 @@ namespace FireAndBrimstone
         }
 
         // ---------------------------------------------------------------------
+        /// <summary>
+        /// Gives the agent compact information about the Room 1 magma grid.
+        /// The first value is the signed offset to the nearest active hazard row
+        /// (positive = higher row index, toward the exit); the second is the signed
+        /// offset to that row's safe column (positive = higher column index); the
+        /// third encodes the current warning/eruption phase in the range [0, 1].
+        /// </summary>
+        public void GetRoom1GridTelemetry(
+            Transform agentTransform,
+            out float relativeHazardRow,
+            out float relativeSafeColumn,
+            out float normalizedWavePhase)
+        {
+            relativeHazardRow = 0f;
+            relativeSafeColumn = 0f;
+            normalizedWavePhase = 0f;
+
+            if (agentTransform == null || room1GridTiles == null || room1GridTiles.Count == 0)
+                return;
+
+            // Locate the grid cell nearest to the agent so the directional
+            // features are relative to its current row and column, not absolute indices.
+            GridTileSlot nearestTile = null;
+            float nearestDistance = float.PositiveInfinity;
+
+            foreach (var slot in room1GridTiles)
+            {
+                if (slot == null || slot.tileObject == null ||
+                    slot.row < 0 || slot.row > 4 || slot.col < 0 || slot.col > 4)
+                    continue;
+
+                Vector3 offset = agentTransform.position - slot.tileObject.transform.position;
+                offset.y = 0f;
+                float distance = offset.sqrMagnitude;
+
+                if (distance < nearestDistance)
+                {
+                    nearestDistance = distance;
+                    nearestTile = slot;
+                }
+            }
+
+            if (nearestTile == null)
+                return;
+
+            int secondaryRow = (_activeWaveRow + 2) % 5;
+            int secondarySafeColumn = 4 - _safeColumnInWaveRow;
+
+            int primaryRowDistance = Mathf.Abs(_activeWaveRow - nearestTile.row);
+            int secondaryRowDistance = Mathf.Abs(secondaryRow - nearestTile.row);
+            bool useSecondaryRow = secondaryRowDistance < primaryRowDistance;
+
+            int nearestHazardRow = useSecondaryRow ? secondaryRow : _activeWaveRow;
+            int safeColumn = useSecondaryRow ? secondarySafeColumn : _safeColumnInWaveRow;
+
+            // Normalize discrete offsets to [-1, 1] so they remain on a similar
+            // scale to the existing velocity and direction observations.
+            relativeHazardRow = Mathf.Clamp(
+                (nearestHazardRow - nearestTile.row) / 4f,
+                -1f,
+                1f
+            );
+            relativeSafeColumn = Mathf.Clamp(
+                (safeColumn - nearestTile.col) / 4f,
+                -1f,
+                1f
+            );
+
+            float phaseDuration = _isWaveErupting
+                ? room1EruptDuration
+                : room1WarningDuration;
+            float phaseProgress = Mathf.Clamp01(
+                _waveTimer / Mathf.Max(0.1f, phaseDuration)
+            );
+
+            // Warning occupies [0, 0.5]; eruption occupies [0.5, 1].
+            normalizedWavePhase = _isWaveErupting
+                ? 0.5f + 0.5f * phaseProgress
+                : 0.5f * phaseProgress;
+        }
+
         // ROOM 2: FIXED-DIRECTION GARGOYLE GAUNTLET (NO PILLARS, FULL WIDTH)
         // ---------------------------------------------------------------------
         private void UpdateRoom2FixedGargoyles()

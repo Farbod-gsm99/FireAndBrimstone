@@ -10,7 +10,7 @@ namespace FireAndBrimstone
     /// Core ML-Agents script for the redesigned 3-room "Fire and Brimstone" environment (20m x 32m Arena).
     /// - Discrete Actions (3 branches: Forward/Back, Strafe Left/Right, Rotate Left/Right)
     /// - 3D RayPerceptionSensors (Stacked = 4) + dynamic Beam BoxColliders so raycasts see gargoyle beams
-    /// - 10 Normalized Vector Observations (Room One-Hot [3], Velocity [2], Exit Dir [2], Gargoyle Threat [3])
+    /// - 10 Normalized Vector Observations (Room One-Hot [3], Velocity [2], Exit Dir [2], Room Hazard Telemetry [3])
     /// - Potential-Based Progress Rewards + 0 step penalty in Rooms 1 & 2 (to encourage patient waiting)
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
@@ -126,6 +126,11 @@ namespace FireAndBrimstone
         public override void Initialize()
         {
             _rb = GetComponent<Rigidbody>();
+
+            // CurriculumManager already enforces a real-time episode timeout.
+            // Disable any prefab-level Agent.MaxStep cap so episodes are not
+            // silently truncated before that timer expires.
+            MaxStep = 0;
 
             _rb.constraints =
                 RigidbodyConstraints.FreezeRotationX |
@@ -413,7 +418,7 @@ namespace FireAndBrimstone
         /// 4-5: Normalized local velocity (X, Z) -> 2 floats
         /// 6-7: Local direction vector toward the Exit Door (X, Z) -> 2 floats
         /// 8-10: Nearest Gargoyle Threat telemetry (ThreatState [0=Idle/Safe, 0.5=Warning, 1=Shooting],
-        ///       NormalizedPhaseTimer [0..1], NormalizedDistance [0..1]) -> 3 floats
+        ///       or Room 1's nearest hazard row, safe-column offset, and wave phase -> 3 floats
         /// Total Vector Observation Space Size = 10.
         /// </summary>
         public override void CollectObservations(VectorSensor sensor)
@@ -443,8 +448,22 @@ namespace FireAndBrimstone
                 sensor.AddObservation(1f);
             }
 
-            // 8-10: Nearest Gargoyle Threat Info (3 floats)
-            if (hazardManager != null && (_currentRoomIndex == 1 || _currentRoomIndex == 2))
+            // 8-10: Room-specific hazard telemetry (3 floats).
+            // Room 1 receives the nearest dangerous row, its safe-column offset,
+            // and the warning/eruption phase. Rooms 2 and 3 keep gargoyle telemetry.
+            if (hazardManager != null && _currentRoomIndex == 0)
+            {
+                hazardManager.GetRoom1GridTelemetry(
+                    transform,
+                    out float relativeHazardRow,
+                    out float relativeSafeColumn,
+                    out float normalizedWavePhase
+                );
+                sensor.AddObservation(relativeHazardRow);
+                sensor.AddObservation(relativeSafeColumn);
+                sensor.AddObservation(normalizedWavePhase);
+            }
+            else if (hazardManager != null && (_currentRoomIndex == 1 || _currentRoomIndex == 2))
             {
                 hazardManager.GetNearestGargoyleTelemetry(
                     transform.position,
