@@ -32,8 +32,11 @@ namespace FireAndBrimstone
         public ArenaHUD arenaHUD;
 
         [Header("Episode Settings")]
-        [Tooltip("Maximum episode time in seconds for the larger 20m x 32m rooms.")]
+        [Tooltip("Maximum episode time in seconds for Rooms 2 and 3.")]
         public float maxEpisodeTimeSeconds = 45f;
+        [Tooltip("Room 1 gets a longer training budget so the agent can wait for the simplified wave and then cross.")]
+        [Min(1f)]
+        public float room1MaxEpisodeTimeSeconds = 60f;
 
         public int CurrentRoomIndex { get; private set; } = 0;
         public int AttemptCount { get; private set; } = 0;
@@ -86,7 +89,6 @@ namespace FireAndBrimstone
         public int ResetArenaForNewEpisode(CubeAgent agent)
         {
             AttemptCount++;
-            RemainingTime = maxEpisodeTimeSeconds;
 
             // Forced-room modes remain available for testing and recording.
             // TrainingCurriculum deliberately does not read an external lesson
@@ -107,6 +109,12 @@ namespace FireAndBrimstone
                     _rooms.Length - 1
                 );
             }
+
+            // Room 1 gets a larger time budget; Mathf.Max also protects against
+            // older prefab instances that still carry the previous 45-second value.
+            RemainingTime = CurrentRoomIndex == 0
+                ? Mathf.Max(maxEpisodeTimeSeconds, room1MaxEpisodeTimeSeconds)
+                : maxEpisodeTimeSeconds;
 
             for (int i = 0; i < _rooms.Length; i++)
             {

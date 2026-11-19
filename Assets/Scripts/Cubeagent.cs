@@ -28,10 +28,16 @@ namespace FireAndBrimstone
         public float rotationSpeed = 165f;
         [Tooltip("Random X-axis offset at episode start so the agent learns general navigation rather than memorizing keys.")]
         public float spawnJitterX = 4.5f;
+        [Tooltip("Smaller start-position variation during Room 1 training keeps the agent near the consistent safe corridor.")]
+        [Min(0f)]
+        public float room1TrainingSpawnJitterX = 0.25f;
 
         [Header("Reward Shaping Settings")]
         [Tooltip("Total potential-based reward earned for advancing from start to the Exit Door.")]
         public float maxProgressReward = 0.6f;
+        [Tooltip("Room 1 gets a stronger potential-based reward for moving toward the exit while learning the simpler grid.")]
+        [Min(0f)]
+        public float room1ProgressReward = 1.0f;
         [Tooltip("Applied ONLY in Room 3 so the agent doesn't hide behind the first pillar forever. Rooms 1 & 2 have 0 step penalty.")]
         public float room3StepPenalty = -0.0003f;
 
@@ -326,9 +332,13 @@ namespace FireAndBrimstone
             // Use the Spawn Point for horizontal placement only. Its Y coordinate
             // may represent either the floor or the agent pivot in the authored
             // scene, so derive the root height from the actual floor collider.
+            float effectiveSpawnJitter = _currentRoomIndex == 0
+                ? room1TrainingSpawnJitterX
+                : spawnJitterX;
+
             float randomX = Random.Range(
-                -spawnJitterX,
-                spawnJitterX
+                -effectiveSpawnJitter,
+                effectiveSpawnJitter
             );
 
             Vector3 spawnPosition;
@@ -552,7 +562,10 @@ namespace FireAndBrimstone
                 if (currentDist < _bestDistToExit)
                 {
                     float delta = _bestDistToExit - currentDist;
-                    float progressReward = (delta / _initialDistToExit) * maxProgressReward;
+                    float rewardBudget = _currentRoomIndex == 0
+                        ? room1ProgressReward
+                        : maxProgressReward;
+                    float progressReward = (delta / _initialDistToExit) * rewardBudget;
                     AddReward(progressReward);
                     _bestDistToExit = currentDist;
                 }
