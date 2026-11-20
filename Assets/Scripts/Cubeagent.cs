@@ -127,7 +127,7 @@ namespace FireAndBrimstone
         private Rigidbody _rb;
         private int _currentRoomIndex;
         private float _initialDistToExit;
-        private float _bestDistToExit;
+        private float _previousDistToExit;
 
         public override void Initialize()
         {
@@ -402,7 +402,9 @@ namespace FireAndBrimstone
                     exitDoorTransform.localPosition
                 );
 
-                _bestDistToExit = _initialDistToExit;
+                // Keep the previous distance so every action receives immediate
+                // feedback for moving toward (or away from) the exit.
+                _previousDistToExit = _initialDistToExit;
             }
 
             if (_isSpawning)
@@ -555,20 +557,25 @@ namespace FireAndBrimstone
                 AddReward(room3StepPenalty);
             }
 
-            // Potential-based progress reward toward the Exit Door (rewards only NEW closest distance)
+            // Dense potential-based progress feedback. Reward movement toward the
+            // exit and penalize movement away from it, rather than rewarding only
+            // new distance records. This helps PPO learn basic navigation sooner.
             if (exitDoorTransform != null && _initialDistToExit > 0.1f)
             {
-                float currentDist = Vector3.Distance(transform.localPosition, exitDoorTransform.localPosition);
-                if (currentDist < _bestDistToExit)
-                {
-                    float delta = _bestDistToExit - currentDist;
-                    float rewardBudget = _currentRoomIndex == 0
-                        ? room1ProgressReward
-                        : maxProgressReward;
-                    float progressReward = (delta / _initialDistToExit) * rewardBudget;
-                    AddReward(progressReward);
-                    _bestDistToExit = currentDist;
-                }
+                float currentDist = Vector3.Distance(
+                    transform.localPosition,
+                    exitDoorTransform.localPosition
+                );
+                float distanceProgress = _previousDistToExit - currentDist;
+                float rewardBudget = _currentRoomIndex == 0
+                    ? room1ProgressReward
+                    : maxProgressReward;
+
+                AddReward(
+                    (distanceProgress / _initialDistToExit) * rewardBudget
+                );
+
+                _previousDistToExit = currentDist;
             }
         }
 
