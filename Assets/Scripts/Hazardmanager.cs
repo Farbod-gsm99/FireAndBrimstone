@@ -83,16 +83,16 @@ namespace FireAndBrimstone
         [Header("Room 1 Training Difficulty")]
         [Tooltip("How long warning tiles remain visible before the eruption.")]
         [Min(0.1f)]
-        public float room1TrainingWarningDuration = 2.5f;
+        public float room1TrainingWarningDuration = 2.25f;
         [Tooltip("How long the fire hitboxes remain active for each row.")]
         [Min(0.1f)]
-        public float room1TrainingEruptDuration = 1.0f;
+        public float room1TrainingEruptDuration = 1.2f;
         [Tooltip("Hazard-free pause between rows. The grid is entirely safe during this interval.")]
         [Min(0f)]
-        public float room1TrainingRestDuration = 1.0f;
+        public float room1TrainingRestDuration = 0.8f;
         [Tooltip("Number of adjacent safe columns in an active hazard row.")]
         [Range(2, 5)]
-        public int room1TrainingSafeColumnCount = 2;
+        public int room1TrainingSafeColumnCount = 1;
         [Tooltip("First safe column when safe-column randomization is disabled.")]
         [Range(0, 4)]
         public int room1TrainingSafeColumnStart = 2;
