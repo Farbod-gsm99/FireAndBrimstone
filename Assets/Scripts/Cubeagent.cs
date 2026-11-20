@@ -30,7 +30,7 @@ namespace FireAndBrimstone
         public float spawnJitterX = 4.5f;
         [Tooltip("Smaller start-position variation during Room 1 training keeps the agent near the consistent safe corridor.")]
         [Min(0f)]
-        public float room1TrainingSpawnJitterX = 0.25f;
+        public float room1TrainingSpawnJitterX = 0.75f;
 
         [Header("Reward Shaping Settings")]
         [Tooltip("Total potential-based reward earned for advancing from start to the Exit Door.")]

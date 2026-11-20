@@ -83,17 +83,17 @@ namespace FireAndBrimstone
         [Header("Room 1 Training Difficulty")]
         [Tooltip("How long warning tiles remain visible before the eruption.")]
         [Min(0.1f)]
-        public float room1TrainingWarningDuration = 3.0f;
+        public float room1TrainingWarningDuration = 2.5f;
         [Tooltip("How long the fire hitboxes remain active for each row.")]
         [Min(0.1f)]
-        public float room1TrainingEruptDuration = 0.75f;
+        public float room1TrainingEruptDuration = 1.0f;
         [Tooltip("Hazard-free pause between rows. The grid is entirely safe during this interval.")]
         [Min(0f)]
-        public float room1TrainingRestDuration = 1.5f;
+        public float room1TrainingRestDuration = 1.0f;
         [Tooltip("Number of adjacent safe columns in an active hazard row.")]
         [Range(2, 5)]
         public int room1TrainingSafeColumnCount = 2;
-        [Tooltip("First safe column in the fixed corridor. With the defaults, columns 2 and 3 are safe.")]
+        [Tooltip("First safe column when safe-column randomization is disabled.")]
         [Range(0, 4)]
         public int room1TrainingSafeColumnStart = 2;
         [Tooltip("The first active row. Row 4 is closest to the exit, so the wave sweeps back toward the start.")]
@@ -101,8 +101,8 @@ namespace FireAndBrimstone
         public int room1TrainingInitialWaveRow = 4;
         [Tooltip("Keep the initial wave row fixed while learning the first room.")]
         public bool room1TrainingRandomizeInitialWaveRow = false;
-        [Tooltip("Keep the safe corridor in the same columns for every attempt.")]
-        public bool room1TrainingRandomizeSafeColumn = false;
+        [Tooltip("Vary the starting safe corridor between attempts and shift it slightly after each row.")]
+        public bool room1TrainingRandomizeSafeColumn = true;
         [Tooltip("Enable the old second, simultaneous hazard row. Disabled in the easier training profile.")]
         public bool room1TrainingUseSecondaryHazardRow = false;
         [Tooltip("After the wave has swept through all five rows, leave the grid safe for the rest of the episode.")]
