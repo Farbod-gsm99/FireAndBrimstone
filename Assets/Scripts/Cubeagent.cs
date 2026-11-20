@@ -10,7 +10,7 @@ namespace FireAndBrimstone
     /// Core ML-Agents script for the redesigned 3-room "Fire and Brimstone" environment (20m x 32m Arena).
     /// - Discrete Actions (3 branches: Forward/Back, Strafe Left/Right, Rotate Left/Right)
     /// - 3D RayPerceptionSensors (Stacked = 4) + dynamic Beam BoxColliders so raycasts see gargoyle beams
-    /// - 10 Normalized Vector Observations (Room One-Hot [3], Velocity [2], Exit Dir [2], Gargoyle Threat [3])
+    /// - 10 Normalized Vector Observations (Room One-Hot [3], Velocity [2], Exit Dir [2], Room Hazard Telemetry [3])
     /// - Potential-Based Progress Rewards + 0 step penalty in Rooms 1 & 2 (to encourage patient waiting)
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
@@ -28,10 +28,16 @@ namespace FireAndBrimstone
         public float rotationSpeed = 165f;
         [Tooltip("Random X-axis offset at episode start so the agent learns general navigation rather than memorizing keys.")]
         public float spawnJitterX = 4.5f;
+        [Tooltip("Smaller start-position variation during Room 1 training keeps the agent near the consistent safe corridor.")]
+        [Min(0f)]
+        public float room1TrainingSpawnJitterX = 0.25f;
 
         [Header("Reward Shaping Settings")]
         [Tooltip("Total potential-based reward earned for advancing from start to the Exit Door.")]
         public float maxProgressReward = 0.6f;
+        [Tooltip("Room 1 gets a stronger potential-based reward for moving toward the exit while learning the simpler grid.")]
+        [Min(0f)]
+        public float room1ProgressReward = 1.0f;
         [Tooltip("Applied ONLY in Room 3 so the agent doesn't hide behind the first pillar forever. Rooms 1 & 2 have 0 step penalty.")]
         public float room3StepPenalty = -0.0003f;
 
@@ -126,6 +132,11 @@ namespace FireAndBrimstone
         public override void Initialize()
         {
             _rb = GetComponent<Rigidbody>();
+
+            // CurriculumManager already enforces a real-time episode timeout.
+            // Disable any prefab-level Agent.MaxStep cap so episodes are not
+            // silently truncated before that timer expires.
+            MaxStep = 0;
 
             _rb.constraints =
                 RigidbodyConstraints.FreezeRotationX |
@@ -321,9 +332,13 @@ namespace FireAndBrimstone
             // Use the Spawn Point for horizontal placement only. Its Y coordinate
             // may represent either the floor or the agent pivot in the authored
             // scene, so derive the root height from the actual floor collider.
+            float effectiveSpawnJitter = _currentRoomIndex == 0
+                ? room1TrainingSpawnJitterX
+                : spawnJitterX;
+
             float randomX = Random.Range(
-                -spawnJitterX,
-                spawnJitterX
+                -effectiveSpawnJitter,
+                effectiveSpawnJitter
             );
 
             Vector3 spawnPosition;
@@ -412,8 +427,8 @@ namespace FireAndBrimstone
         /// 1-3: One-hot encoding of the current room (Room 1, Room 2, Room 3) -> 3 floats
         /// 4-5: Normalized local velocity (X, Z) -> 2 floats
         /// 6-7: Local direction vector toward the Exit Door (X, Z) -> 2 floats
-        /// 8-10: Nearest Gargoyle Threat telemetry (ThreatState [0=Idle/Safe, 0.5=Warning, 1=Shooting],
-        ///       NormalizedPhaseTimer [0..1], NormalizedDistance [0..1]) -> 3 floats
+        /// 8-10: Room hazard telemetry (Room 1 grid offsets/phase; Rooms 2-3 gargoyle
+        ///       threat state, phase timer, and distance) -> 3 floats
         /// Total Vector Observation Space Size = 10.
         /// </summary>
         public override void CollectObservations(VectorSensor sensor)
@@ -443,8 +458,22 @@ namespace FireAndBrimstone
                 sensor.AddObservation(1f);
             }
 
-            // 8-10: Nearest Gargoyle Threat Info (3 floats)
-            if (hazardManager != null && (_currentRoomIndex == 1 || _currentRoomIndex == 2))
+            // 8-10: Room-specific hazard telemetry (3 floats).
+            // Room 1 receives the nearest dangerous row, its safe-column offset,
+            // and the warning/eruption phase. Rooms 2 and 3 keep gargoyle telemetry.
+            if (hazardManager != null && _currentRoomIndex == 0)
+            {
+                hazardManager.GetRoom1GridTelemetry(
+                    transform,
+                    out float relativeHazardRow,
+                    out float relativeSafeColumn,
+                    out float normalizedWavePhase
+                );
+                sensor.AddObservation(relativeHazardRow);
+                sensor.AddObservation(relativeSafeColumn);
+                sensor.AddObservation(normalizedWavePhase);
+            }
+            else if (hazardManager != null && (_currentRoomIndex == 1 || _currentRoomIndex == 2))
             {
                 hazardManager.GetNearestGargoyleTelemetry(
                     transform.position,
@@ -533,7 +562,10 @@ namespace FireAndBrimstone
                 if (currentDist < _bestDistToExit)
                 {
                     float delta = _bestDistToExit - currentDist;
-                    float progressReward = (delta / _initialDistToExit) * maxProgressReward;
+                    float rewardBudget = _currentRoomIndex == 0
+                        ? room1ProgressReward
+                        : maxProgressReward;
+                    float progressReward = (delta / _initialDistToExit) * rewardBudget;
                     AddReward(progressReward);
                     _bestDistToExit = currentDist;
                 }

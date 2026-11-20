@@ -77,10 +77,36 @@ namespace FireAndBrimstone
         public Material tileWarningMaterial;
         public Material tileEruptingMaterial;
 
-        [Header("Room 1: 5x5 Large Magma Grid Configuration")]
+        [Header("Room 1: 5x5 Magma Grid")]
         public List<GridTileSlot> room1GridTiles = new List<GridTileSlot>();
-        public float room1WarningDuration = 1.1f;
-        public float room1EruptDuration = 1.8f;
+
+        [Header("Room 1 Training Difficulty")]
+        [Tooltip("How long warning tiles remain visible before the eruption.")]
+        [Min(0.1f)]
+        public float room1TrainingWarningDuration = 3.0f;
+        [Tooltip("How long the fire hitboxes remain active for each row.")]
+        [Min(0.1f)]
+        public float room1TrainingEruptDuration = 0.75f;
+        [Tooltip("Hazard-free pause between rows. The grid is entirely safe during this interval.")]
+        [Min(0f)]
+        public float room1TrainingRestDuration = 1.5f;
+        [Tooltip("Number of adjacent safe columns in an active hazard row.")]
+        [Range(2, 5)]
+        public int room1TrainingSafeColumnCount = 2;
+        [Tooltip("First safe column in the fixed corridor. With the defaults, columns 2 and 3 are safe.")]
+        [Range(0, 4)]
+        public int room1TrainingSafeColumnStart = 2;
+        [Tooltip("The first active row. Row 4 is closest to the exit, so the wave sweeps back toward the start.")]
+        [Range(0, 4)]
+        public int room1TrainingInitialWaveRow = 4;
+        [Tooltip("Keep the initial wave row fixed while learning the first room.")]
+        public bool room1TrainingRandomizeInitialWaveRow = false;
+        [Tooltip("Keep the safe corridor in the same columns for every attempt.")]
+        public bool room1TrainingRandomizeSafeColumn = false;
+        [Tooltip("Enable the old second, simultaneous hazard row. Disabled in the easier training profile.")]
+        public bool room1TrainingUseSecondaryHazardRow = false;
+        [Tooltip("After the wave has swept through all five rows, leave the grid safe for the rest of the episode.")]
+        public bool room1TrainingStopAfterSweep = true;
 
         [Header("Room 2: Fixed-Direction Gargoyles (No Pillars, Full-Room Beams)")]
         public List<GargoyleTurretSlot> room2FixedGargoyles = new List<GargoyleTurretSlot>();
@@ -114,6 +140,8 @@ namespace FireAndBrimstone
         private int _safeColumnInWaveRow = 2;
         private float _waveTimer = 0f;
         private bool _isWaveErupting = false;
+        private bool _isWaveResting = true;
+        private bool _room1SweepCompleted = false;
         private Transform _trackedAgentTransform;
 
         private void Awake()
@@ -148,10 +176,23 @@ namespace FireAndBrimstone
 
         public void ResetRoom1MagmaGrid()
         {
-            _activeWaveRow = Random.Range(0, 5);
-            _safeColumnInWaveRow = Random.Range(0, 5);
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            int maxSafeColumnStart = 5 - safeColumnCount;
+
+            _activeWaveRow = room1TrainingRandomizeInitialWaveRow
+                ? Random.Range(0, 5)
+                : Mathf.Clamp(room1TrainingInitialWaveRow, 0, 4);
+
+            _safeColumnInWaveRow = room1TrainingRandomizeSafeColumn
+                ? Random.Range(0, maxSafeColumnStart + 1)
+                : Mathf.Clamp(room1TrainingSafeColumnStart, 0, maxSafeColumnStart);
+
+            // Give the agent a short, completely safe start before the first warning.
             _waveTimer = 0f;
             _isWaveErupting = false;
+            _isWaveResting = true;
+            _room1SweepCompleted = false;
+
             ApplyRoom1GridStates();
         }
 
@@ -250,71 +291,244 @@ namespace FireAndBrimstone
         // ---------------------------------------------------------------------
         private void UpdateRoom1MagmaGrid()
         {
+            if (_room1SweepCompleted)
+                return;
+
             _waveTimer += Time.deltaTime;
+
+            // During the rest interval every tile is safe. This provides a clear
+            // traversal window between successive rows.
+            if (_isWaveResting)
+            {
+                if (_waveTimer >= room1TrainingRestDuration)
+                {
+                    _waveTimer = 0f;
+                    _isWaveResting = false;
+                    ApplyRoom1GridStates();
+                }
+
+                return;
+            }
 
             if (!_isWaveErupting)
             {
-                if (_waveTimer >= room1WarningDuration)
+                if (_waveTimer >= room1TrainingWarningDuration)
                 {
                     _waveTimer = 0f;
                     _isWaveErupting = true;
                     ApplyRoom1GridStates();
                 }
+
+                return;
             }
-            else
+
+            if (_waveTimer >= room1TrainingEruptDuration)
             {
-                if (_waveTimer >= room1EruptDuration)
+                _waveTimer = 0f;
+                _isWaveErupting = false;
+
+                // The wave travels from the exit-side row back toward the start.
+                // Once row zero has erupted, stop the wave and leave the whole grid safe.
+                if (_activeWaveRow == 0 && room1TrainingStopAfterSweep)
                 {
-                    _waveTimer = 0f;
-                    _isWaveErupting = false;
-
-                    _activeWaveRow = (_activeWaveRow + 4) % 5;
-                    int colShift = Random.Range(-1, 2);
-                    _safeColumnInWaveRow = Mathf.Clamp(_safeColumnInWaveRow + colShift, 0, 4);
-
-                    ApplyRoom1GridStates();
+                    _room1SweepCompleted = true;
+                    _isWaveResting = false;
                 }
+                else
+                {
+                    _activeWaveRow = (_activeWaveRow + 4) % 5;
+
+                    if (room1TrainingRandomizeSafeColumn)
+                    {
+                        int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+                        int maxSafeColumnStart = 5 - safeColumnCount;
+                        int shift = Random.Range(-1, 2);
+                        _safeColumnInWaveRow = Mathf.Clamp(
+                            _safeColumnInWaveRow + shift,
+                            0,
+                            maxSafeColumnStart
+                        );
+                    }
+
+                    _isWaveResting = true;
+                }
+
+                ApplyRoom1GridStates();
             }
+        }
+
+        private int GetRoom1SafeColumnStart(int mirrored = 0)
+        {
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            int maxSafeColumnStart = 5 - safeColumnCount;
+            int safeStart = Mathf.Clamp(_safeColumnInWaveRow, 0, maxSafeColumnStart);
+
+            return mirrored == 0
+                ? safeStart
+                : maxSafeColumnStart - safeStart;
+        }
+
+        private bool IsRoom1SafeColumn(int column, int safeColumnStart)
+        {
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            return column >= safeColumnStart &&
+                   column < safeColumnStart + safeColumnCount;
         }
 
         private void ApplyRoom1GridStates()
         {
             int secondaryRow = (_activeWaveRow + 2) % 5;
-            int secondarySafeCol = (4 - _safeColumnInWaveRow);
+            int primarySafeStart = GetRoom1SafeColumnStart();
+            int secondarySafeStart = GetRoom1SafeColumnStart(mirrored: 1);
+            bool hazardsActive = !_isWaveResting && !_room1SweepCompleted;
 
             foreach (var slot in room1GridTiles)
             {
-                if (slot.tileObject == null) continue;
+                if (slot == null || slot.tileObject == null)
+                    continue;
 
-                bool isInPrimaryRow = (slot.row == _activeWaveRow && slot.col != _safeColumnInWaveRow);
-                bool isInSecondaryRow = (slot.row == secondaryRow && slot.col != secondarySafeCol);
+                bool isInPrimaryRow = hazardsActive &&
+                    slot.row == _activeWaveRow &&
+                    !IsRoom1SafeColumn(slot.col, primarySafeStart);
+
+                bool isInSecondaryRow = hazardsActive &&
+                    room1TrainingUseSecondaryHazardRow &&
+                    slot.row == secondaryRow &&
+                    !IsRoom1SafeColumn(slot.col, secondarySafeStart);
+
                 bool isHazardTile = isInPrimaryRow || isInSecondaryRow;
 
                 if (!isHazardTile)
                 {
                     slot.tileObject.tag = "GridTile_Safe";
+
                     if (slot.tileRenderer != null && tileSafeMaterial != null)
                         slot.tileRenderer.sharedMaterial = tileSafeMaterial;
+
                     if (slot.firePillarHitbox != null)
                         slot.firePillarHitbox.SetActive(false);
                 }
                 else if (!_isWaveErupting)
                 {
                     slot.tileObject.tag = "GridTile_Warning";
+
                     if (slot.tileRenderer != null && tileWarningMaterial != null)
                         slot.tileRenderer.sharedMaterial = tileWarningMaterial;
+
                     if (slot.firePillarHitbox != null)
                         slot.firePillarHitbox.SetActive(false);
                 }
                 else
                 {
                     slot.tileObject.tag = "GridTile_Warning";
+
                     if (slot.tileRenderer != null && tileEruptingMaterial != null)
                         slot.tileRenderer.sharedMaterial = tileEruptingMaterial;
+
                     if (slot.firePillarHitbox != null)
                         slot.firePillarHitbox.SetActive(true);
                 }
             }
+        }
+
+        // ---------------------------------------------------------------------
+        // ROOM 1: GRID TELEMETRY FOR THE AGENT
+        // ---------------------------------------------------------------------
+        /// <summary>
+        /// Gives the agent compact information about the Room 1 magma grid.
+        /// The first value is the signed offset to the nearest active hazard row
+        /// (positive = higher row index, toward the exit); the second is the signed
+        /// offset to that row's safe column (positive = higher column index); the
+        /// third encodes the current warning/eruption phase in the range [0, 1].
+        /// </summary>
+        public void GetRoom1GridTelemetry(
+            Transform agentTransform,
+            out float relativeHazardRow,
+            out float relativeSafeColumn,
+            out float normalizedWavePhase)
+        {
+            relativeHazardRow = 0f;
+            relativeSafeColumn = 0f;
+            normalizedWavePhase = 0f;
+
+            if (agentTransform == null || room1GridTiles == null || room1GridTiles.Count == 0)
+                return;
+
+            // Find the grid cell nearest to the agent so directions are egocentric.
+            GridTileSlot nearestTile = null;
+            float nearestDistance = float.PositiveInfinity;
+
+            foreach (var slot in room1GridTiles)
+            {
+                if (slot == null || slot.tileObject == null ||
+                    slot.row < 0 || slot.row > 4 || slot.col < 0 || slot.col > 4)
+                    continue;
+
+                Vector3 offset = agentTransform.position - slot.tileObject.transform.position;
+                offset.y = 0f;
+                float distance = offset.sqrMagnitude;
+
+                if (distance < nearestDistance)
+                {
+                    nearestDistance = distance;
+                    nearestTile = slot;
+                }
+            }
+
+            if (nearestTile == null)
+                return;
+
+            int nearestHazardRow = _activeWaveRow;
+            int safeColumnStart = GetRoom1SafeColumnStart();
+
+            if (room1TrainingUseSecondaryHazardRow)
+            {
+                int secondaryRow = (_activeWaveRow + 2) % 5;
+
+                if (Mathf.Abs(secondaryRow - nearestTile.row) <
+                    Mathf.Abs(_activeWaveRow - nearestTile.row))
+                {
+                    nearestHazardRow = secondaryRow;
+                    safeColumnStart = GetRoom1SafeColumnStart(mirrored: 1);
+                }
+            }
+
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            int nearestSafeColumn = Mathf.Clamp(
+                nearestTile.col,
+                safeColumnStart,
+                safeColumnStart + safeColumnCount - 1
+            );
+
+            relativeHazardRow = Mathf.Clamp(
+                (nearestHazardRow - nearestTile.row) / 4f,
+                -1f,
+                1f
+            );
+            relativeSafeColumn = Mathf.Clamp(
+                (nearestSafeColumn - nearestTile.col) / 4f,
+                -1f,
+                1f
+            );
+
+            // Phase 0 means the grid is currently safe (initial rest or completed sweep).
+            if (_isWaveResting || _room1SweepCompleted)
+            {
+                normalizedWavePhase = 0f;
+                return;
+            }
+
+            float phaseDuration = _isWaveErupting
+                ? room1TrainingEruptDuration
+                : room1TrainingWarningDuration;
+            float phaseProgress = Mathf.Clamp01(
+                _waveTimer / Mathf.Max(0.1f, phaseDuration)
+            );
+
+            // Warning occupies [0, 0.5]; eruption occupies [0.5, 1].
+            normalizedWavePhase = _isWaveErupting
+                ? 0.5f + 0.5f * phaseProgress
+                : 0.5f * phaseProgress;
         }
 
         // ---------------------------------------------------------------------
