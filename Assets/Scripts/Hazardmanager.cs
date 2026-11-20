@@ -83,15 +83,15 @@ namespace FireAndBrimstone
         [Header("Room 1 Training Difficulty")]
         [Tooltip("How long warning tiles remain visible before the eruption.")]
         [Min(0.1f)]
-        public float room1TrainingWarningDuration = 2.25f;
+        public float room1TrainingWarningDuration = 1.1f;
         [Tooltip("How long the fire hitboxes remain active for each row.")]
         [Min(0.1f)]
-        public float room1TrainingEruptDuration = 1.2f;
+        public float room1TrainingEruptDuration = 1.8f;
         [Tooltip("Hazard-free pause between rows. The grid is entirely safe during this interval.")]
         [Min(0f)]
-        public float room1TrainingRestDuration = 0.8f;
+        public float room1TrainingRestDuration = 0.2f;
         [Tooltip("Number of adjacent safe columns in an active hazard row.")]
-        [Range(2, 5)]
+        [Range(1, 5)]
         public int room1TrainingSafeColumnCount = 1;
         [Tooltip("First safe column when safe-column randomization is disabled.")]
         [Range(0, 4)]
@@ -99,14 +99,14 @@ namespace FireAndBrimstone
         [Tooltip("The first active row. Row 4 is closest to the exit, so the wave sweeps back toward the start.")]
         [Range(0, 4)]
         public int room1TrainingInitialWaveRow = 4;
-        [Tooltip("Keep the initial wave row fixed while learning the first room.")]
-        public bool room1TrainingRandomizeInitialWaveRow = false;
-        [Tooltip("Vary the starting safe corridor between attempts and shift it slightly after each row.")]
+        [Tooltip("Randomize the first active row every episode so the agent cannot memorize a fixed opening.")]
+        public bool room1TrainingRandomizeInitialWaveRow = true;
+        [Tooltip("Choose a new safe column for each wave step instead of keeping a predictable corridor.")]
         public bool room1TrainingRandomizeSafeColumn = true;
-        [Tooltip("Enable the old second, simultaneous hazard row. Disabled in the easier training profile.")]
-        public bool room1TrainingUseSecondaryHazardRow = false;
-        [Tooltip("After the wave has swept through all five rows, leave the grid safe for the rest of the episode.")]
-        public bool room1TrainingStopAfterSweep = true;
+        [Tooltip("Enable a second simultaneous hazard row with a mirrored one-tile safe lane.")]
+        public bool room1TrainingUseSecondaryHazardRow = true;
+        [Tooltip("Stop the hazard cycle after one sweep. Disable this to keep the grid dangerous until the episode ends.")]
+        public bool room1TrainingStopAfterSweep = false;
 
         [Header("Room 2: Fixed-Direction Gargoyles (No Pillars, Full-Room Beams)")]
         public List<GargoyleTurretSlot> room2FixedGargoyles = new List<GargoyleTurretSlot>();
@@ -176,7 +176,7 @@ namespace FireAndBrimstone
 
         public void ResetRoom1MagmaGrid()
         {
-            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 1, 5);
             int maxSafeColumnStart = 5 - safeColumnCount;
 
             _activeWaveRow = room1TrainingRandomizeInitialWaveRow
@@ -187,7 +187,7 @@ namespace FireAndBrimstone
                 ? Random.Range(0, maxSafeColumnStart + 1)
                 : Mathf.Clamp(room1TrainingSafeColumnStart, 0, maxSafeColumnStart);
 
-            // Give the agent a short, completely safe start before the first warning.
+            // Begin with a short safe interval before the first warning.
             _waveTimer = 0f;
             _isWaveErupting = false;
             _isWaveResting = true;
@@ -328,7 +328,7 @@ namespace FireAndBrimstone
                 _isWaveErupting = false;
 
                 // The wave travels from the exit-side row back toward the start.
-                // Once row zero has erupted, stop the wave and leave the whole grid safe.
+                // Optionally stop after row zero. Training keeps this disabled so the wave loops.
                 if (_activeWaveRow == 0 && room1TrainingStopAfterSweep)
                 {
                     _room1SweepCompleted = true;
@@ -340,13 +340,13 @@ namespace FireAndBrimstone
 
                     if (room1TrainingRandomizeSafeColumn)
                     {
-                        int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+                        int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 1, 5);
                         int maxSafeColumnStart = 5 - safeColumnCount;
-                        int shift = Random.Range(-1, 2);
-                        _safeColumnInWaveRow = Mathf.Clamp(
-                            _safeColumnInWaveRow + shift,
+                        // Re-roll the lane for every row transition. This prevents
+                        // the agent from following a slowly drifting, predictable corridor.
+                        _safeColumnInWaveRow = Random.Range(
                             0,
-                            maxSafeColumnStart
+                            maxSafeColumnStart + 1
                         );
                     }
 
@@ -359,7 +359,7 @@ namespace FireAndBrimstone
 
         private int GetRoom1SafeColumnStart(int mirrored = 0)
         {
-            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 1, 5);
             int maxSafeColumnStart = 5 - safeColumnCount;
             int safeStart = Mathf.Clamp(_safeColumnInWaveRow, 0, maxSafeColumnStart);
 
@@ -370,7 +370,7 @@ namespace FireAndBrimstone
 
         private bool IsRoom1SafeColumn(int column, int safeColumnStart)
         {
-            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 1, 5);
             return column >= safeColumnStart &&
                    column < safeColumnStart + safeColumnCount;
         }
@@ -493,7 +493,7 @@ namespace FireAndBrimstone
                 }
             }
 
-            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 2, 5);
+            int safeColumnCount = Mathf.Clamp(room1TrainingSafeColumnCount, 1, 5);
             int nearestSafeColumn = Mathf.Clamp(
                 nearestTile.col,
                 safeColumnStart,
