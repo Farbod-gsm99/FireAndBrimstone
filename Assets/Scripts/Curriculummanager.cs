@@ -38,7 +38,7 @@ namespace FireAndBrimstone
         [Min(1f)]
         public float room1MaxEpisodeTimeSeconds = 60f;
 
-        public int CurrentRoomIndex { get; private set; } = 0;
+        public int CurrentRoomIndex { get; private set; } = 1;
         public int AttemptCount { get; private set; } = 0;
         public float RemainingTime { get; private set; } = 45f;
 
@@ -83,8 +83,8 @@ namespace FireAndBrimstone
 
         /// <summary>
         /// Called at the start of every episode by CubeAgent.OnEpisodeBegin().
-        /// In training mode, CurrentRoomIndex is retained between episodes and only
-        /// advances when the agent successfully reaches the current room's exit.
+        /// In training mode, CurrentRoomIndex starts at Room 2, is retained after failures,
+        /// and advances only when the agent successfully reaches the current room's exit.
         /// </summary>
         public int ResetArenaForNewEpisode(CubeAgent agent)
         {
@@ -156,7 +156,7 @@ namespace FireAndBrimstone
         /// Advances this arena's training agent after a successful room exit.
         /// A failed or timed-out episode never calls this method, so the agent
         /// remains in the same room until it completes it.
-        /// After Room 3, the next episode starts a new three-room sequence at Room 1.
+        /// After Room 3, the next episode starts a new training sequence at Room 2.
         /// </summary>
         public void AdvanceAfterSuccessfulRoom()
         {
@@ -169,7 +169,8 @@ namespace FireAndBrimstone
 
             if (CurrentRoomIndex >= _rooms.Length - 1)
             {
-                CurrentRoomIndex = 0;
+                // Begin the next training cycle at Room 2, not Room 1.
+                CurrentRoomIndex = 1;
             }
             else
             {
