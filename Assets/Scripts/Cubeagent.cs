@@ -11,7 +11,7 @@ namespace FireAndBrimstone
     /// - Discrete Actions (3 branches: Forward/Back, Strafe Left/Right, Rotate Left/Right)
     /// - 3D RayPerceptionSensors (Stacked = 4) + dynamic Beam BoxColliders so raycasts see gargoyle beams
     /// - 10 Normalized Vector Observations (Room One-Hot [3], Velocity [2], Exit Dir [2], Room Hazard Telemetry [3])
-    /// - Potential-Based Progress Rewards + 0 step penalty in Rooms 1 & 2 (to encourage patient waiting)
+    /// - Potential-based progress rewards with a small Room 2 decision-step penalty
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     public class CubeAgent : Agent
@@ -33,12 +33,17 @@ namespace FireAndBrimstone
         public float room1TrainingSpawnJitterX = 0.75f;
 
         [Header("Reward Shaping Settings")]
-        [Tooltip("Total potential-based reward earned for advancing from start to the Exit Door.")]
+        [Tooltip("Total potential-based reward earned for advancing from start to the Exit Door in Room 3.")]
         public float maxProgressReward = 0.6f;
         [Tooltip("Room 1 gets a stronger potential-based reward for moving toward the exit while learning the simpler grid.")]
         [Min(0f)]
         public float room1ProgressReward = 1.0f;
-        [Tooltip("Applied ONLY in Room 3 so the agent doesn't hide behind the first pillar forever. Rooms 1 & 2 have 0 step penalty.")]
+        [Tooltip("Total potential-based reward earned for advancing from start to the Exit Door in Room 2.")]
+        [Min(0f)]
+        public float room2ProgressReward = 1.0f;
+        [Tooltip("Applied ONLY in Room 2 to mildly discourage dithering while preserving time to cross between fire lanes.")]
+        public float room2StepPenalty = -0.0002f;
+        [Tooltip("Applied ONLY in Room 3 so the agent doesn't hide behind the first pillar forever.")]
         public float room3StepPenalty = -0.0003f;
 
 
@@ -550,9 +555,14 @@ namespace FireAndBrimstone
                 return;
             }
 
-            // Rooms 1 and 2 have 0 step penalty so the agent can wait patiently for fire waves/lanes to clear.
-            // Room 3 applies a tiny step penalty so the agent advances from pillar to pillar.
-            if (_currentRoomIndex == 2)
+            // Room 1 has no step penalty so the agent can wait for safe tiles.
+            // Room 2 gets a tiny penalty to discourage unproductive dithering.
+            // Room 3 keeps its existing penalty to encourage movement between pillars.
+            if (_currentRoomIndex == 1)
+            {
+                AddReward(room2StepPenalty);
+            }
+            else if (_currentRoomIndex == 2)
             {
                 AddReward(room3StepPenalty);
             }
@@ -569,7 +579,9 @@ namespace FireAndBrimstone
                 float distanceProgress = _previousDistToExit - currentDist;
                 float rewardBudget = _currentRoomIndex == 0
                     ? room1ProgressReward
-                    : maxProgressReward;
+                    : _currentRoomIndex == 1
+                        ? room2ProgressReward
+                        : maxProgressReward;
 
                 AddReward(
                     (distanceProgress / _initialDistToExit) * rewardBudget
